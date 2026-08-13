@@ -40,6 +40,16 @@ strategies of the game.
    merging melds, etc.).
 5. **Board visualization.** Simple representation of the game state as a
    `data.frame` or plot, to "see" the table when analyzing games.
+6. **Game analysis.** Use the tools above to answer strategic questions by
+   simulation:
+   - **Opening (30 rule):** probability of being able to open with only the
+     14 starting tiles, and the average number of draws needed to open when
+     the starting hand does not reach 30.
+   - **Runs vs groups:** in random hands, which type of meld is more likely,
+     and whether middle numbers generate more melds than edge numbers.
+   - **Value of drawing:** in which situations drawing is better than waiting
+     for a restructuring play, and which tile types unlock the most plays
+     (simulations).
 
 > Bots / automatic players are out of scope for now (future work).
 
@@ -86,8 +96,16 @@ them use the same tile representation.
 - [x] **Objective 5**: board visualization (`tablero_a_datos()` data.frame,
       `graficar_tablero()` plot, `mostrar_tablero()` console output).
       Implemented and tested (17 tests).
+- [ ] **Objective 6, Opening**: probability of opening with only the 14
+      starting tiles; expected number of draws needed to open when the hand
+      cannot reach 30.
+- [ ] **Objective 6, Runs vs groups**: relative frequency of runs and groups
+      in random hands; heatmap of melds by tile number.
+- [ ] **Objective 6, Value of drawing**: when drawing beats waiting for a
+      restructuring play; which tile types unlock the most plays.
 
-All 5 objectives are implemented. **Total: 133 tests passing.**
+Tools (objectives 1-5) are implemented and tested (**133 tests passing**);
+the game analysis phase (objective 6) is planned.
 
 ## Open questions / to decide
 
