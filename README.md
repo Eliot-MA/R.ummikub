@@ -55,17 +55,18 @@ strategies of the game.
 
 ## Repository structure
 
-| File                                  | Contents                                                |
-|---------------------------------------|---------------------------------------------------------|
-| `scripts/00_pool_fichas.R`            | Tile pool definition (shared by all scripts)            |
-| `scripts/01_melds_validos.R`          | Objective 1: runs, groups and the 30 rule               |
-| `scripts/02_probabilidad_pesca.R`     | Objective 2: probability of drawing a useful tile       |
-| `scripts/03_verificador_tablero.R`    | Objective 3: validate board combinations                |
-| `scripts/04_reestructuracion_tablero.R` | Objective 4: rearrange existing combos                |
-| `scripts/05_visualizacion_tablero.R`  | Objective 5: board as `data.frame` / plot               |
-| `tests/`                              | `testthat` tests (`Rscript -e "testthat::test_file('tests/test_objetivo_01.R')"`) |
+| File                                    | Contents                                                 |
+|-----------------------------------------|----------------------------------------------------------|
+| `scripts/00_tile_pool.R`                | Tile pool definition (shared by all scripts)             |
+| `scripts/01_valid_melds.R`              | Objective 1: runs, groups and the 30 rule                |
+| `scripts/02_draw_probability.R`         | Objective 2: probability of drawing a useful tile        |
+| `scripts/03_board_verifier.R`           | Objective 3: validate board combinations                 |
+| `scripts/04_board_restructuring.R`      | Objective 4: rearrange existing combos                   |
+| `scripts/05_board_visualization.R`      | Objective 5: board as `data.frame` / plot                |
+| `scripts/06_opening_analysis.R`         | Objective 6: opening analysis (rule of 30, Monte Carlo)  |
+| `tests/`                                | `testthat` tests (`Rscript -e "testthat::test_file('tests/test_objective_01.R')"`) |
 
-Scripts load the pool from `00_pool_fichas.R` via `source()`, so that all of
+Scripts load the pool from `00_tile_pool.R` via `source()`, so that all of
 them use the same tile representation.
 
 ## Initial assumptions
@@ -86,26 +87,28 @@ them use the same tile representation.
 - [x] **Objective 1**: meld detection (runs and groups, with jokers), point
       total and the 30 rule. Implemented and tested (32 tests).
 - [x] **Objective 2**: probability of drawing a useful tile (exact
-      combinatorics, configurable `es_util` criterion). Implemented and
+      combinatorics, configurable `is_useful` criterion). Implemented and
       tested (19 tests).
 - [x] **Objective 3**: board verifier (every meld valid + physically
       possible tiles). Implemented and tested (22 tests).
 - [x] **Objective 4**: board restructuring (add to melds, joker swaps,
       moving tiles between melds, splitting runs; all validated with
       objective 3). Implemented and tested (43 tests).
-- [x] **Objective 5**: board visualization (`tablero_a_datos()` data.frame,
-      `graficar_tablero()` plot, `mostrar_tablero()` console output).
+- [x] **Objective 5**: board visualization (`board_to_data()` data.frame,
+      `plot_board()` plot, `show_board()` console output).
       Implemented and tested (17 tests).
-- [ ] **Objective 6, Opening**: probability of opening with only the 14
+- [x] **Objective 6, Opening**: probability of opening with only the 14
       starting tiles; expected number of draws needed to open when the hand
-      cannot reach 30.
+      cannot reach 30. Implemented and tested (18 tests).
 - [ ] **Objective 6, Runs vs groups**: relative frequency of runs and groups
       in random hands; heatmap of melds by tile number.
 - [ ] **Objective 6, Value of drawing**: when drawing beats waiting for a
       restructuring play; which tile types unlock the most plays.
 
-Tools (objectives 1-5) are implemented and tested (**133 tests passing**);
-the game analysis phase (objective 6) is planned.
+Tools (objectives 1-5) are implemented and tested (**133 tests passing**),
+and the opening analysis (objective 6) adds 18 more (**151 tests passing
+in total**). The remaining game-analysis phases (runs vs groups, value of
+drawing) are planned.
 
 ## Open questions / to decide
 

@@ -1,0 +1,750 @@
+---
+title: "Rummikub — Function Reference"
+subtitle: "R tools to understand and analyze the game of Rummikub"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    theme: cosmo
+    code-fold: false
+    self-contained: true
+    df-print: paged
+---
+
+# Overview
+
+This project provides a set of **R functions** to analyze the board game
+**Rummikub**. The goal is not to build a playable game with bots, but to
+write code that helps us understand the rules, probabilities and strategies
+of the game.
+
+The functions are organized into 7 scripts, one per objective. Every script
+loads the shared ones it needs with `source()`, so all of them use the same
+tile representation.
+
+## Tile representation
+
+All functions work with `data.frame`s with two columns:
+
+- `number`: an integer in `1:13`, or `NA` for a joker.
+- `colour`: one of `"red"`, `"blue"`, `"yellow"`, `"black"`, or `"wild"`
+  for a joker.
+
+A *meld* is a `data.frame` with these same columns. A *board* is a list of
+melds, or a single `data.frame` with an extra `meld_id` column.
+
+## Repository structure
+
+| File                              | Objective                                              |
+|-----------------------------------|--------------------------------------------------------|
+| `scripts/00_tile_pool.R`          | Shared tile pool definition                            |
+| `scripts/01_valid_melds.R`        | 1: valid meld detection + rule of 30                   |
+| `scripts/02_draw_probability.R`   | 2: probability of drawing a useful tile                |
+| `scripts/03_board_verifier.R`     | 3: validate board combinations                         |
+| `scripts/04_board_restructuring.R`| 4: rearrange existing combos                           |
+| `scripts/05_board_visualization.R`| 5: board as `data.frame` / plot                        |
+| `scripts/06_opening_analysis.R`   | 6: opening analysis (rule of 30, Monte Carlo)          |
+| `reports/function_reference.qmd`  | This document                                          |
+
+## Setup
+
+The following chunk loads every script (it is executed before the examples,
+with the working directory inside `reports/`):
+
+```{r setup, message = FALSE, warning = FALSE}
+source("../scripts/00_tile_pool.R")
+source("../scripts/01_valid_melds.R")
+source("../scripts/02_draw_probability.R")
+source("../scripts/03_board_verifier.R")
+source("../scripts/04_board_restructuring.R")
+source("../scripts/05_board_visualization.R")
+source("../scripts/06_opening_analysis.R")
+```
+
+::: {.callout-note}
+`source_local()` is defined in every script. It loads a shared script from
+`scripts/` by walking up from the working directory, so the scripts work no
+matter where R is started from. You normally never call it directly.
+:::
+
+---
+
+# Script 00 — Tile pool (`scripts/00_tile_pool.R`)
+
+*Objective: a single, shared representation of the tiles used by every
+other script.*
+
+## Constant `COLOURS`
+
+The 4 standard colours of the game.
+
+```{r colours, message = FALSE}
+COLOURS
+```
+
+## `tile_pool()`
+
+Builds the complete pool of **106 tiles**: 104 numbered tiles (numbers 1 to
+13 in 4 colours, 2 copies of each combination) plus 2 jokers.
+
+- **Arguments:** none.
+- **Value:** a `data.frame(number, colour)` with 106 rows.
+
+```{r tile-pool, message = FALSE}
+pool <- tile_pool()
+nrow(pool)
+head(pool, 3)
+table(pool$colour)
+```
+
+## `tiles(number, colour)`
+
+Builds a meld (a `data.frame` of tiles) from `number` and `colour` vectors.
+Use `NA` / `"wild"` for jokers.
+
+- **Arguments:**
+  - `number`: integer vector (use `NA` for jokers).
+  - `colour`: character vector.
+- **Value:** a `data.frame(number, colour)`.
+
+```{r tiles}
+tiles(c(3, 4, 5), c("red", "red", "red"))
+```
+
+## `is_joker(number, colour)`
+
+Tells whether a tile is a joker (`number` is `NA` or `colour == "wild"`).
+
+- **Arguments:** `number`, `colour`: scalar tile values.
+- **Value:** `TRUE`/`FALSE`.
+
+```{r is-joker}
+is_joker(NA, "wild")
+is_joker(5, "red")
+```
+
+## `count_tiles(tiles)`
+
+Builds an *inventory*: how many copies of each (number, colour) type a
+collection of tiles contains.
+
+- **Arguments:** `tiles`: a `data.frame(number, colour)`.
+- **Value:** a `data.frame(number, colour, n)` with one row per present type.
+
+```{r count-tiles}
+count_tiles(tiles(c(5, 5, 5), c("red", "red", "blue")))
+```
+
+## `subtract_tiles(counter, subtract)`
+
+Subtracts one inventory from another. Used to remove the tiles we can see
+(hand + board) from the pool.
+
+- **Arguments:**
+  - `counter`: the inventory to subtract from.
+  - `subtract`: the inventory to subtract.
+- **Value:** the resulting inventory (rows with `n > 0` only).
+- **Errors:** if a tile is not found, or if more copies are subtracted than
+  exist.
+
+```{r subtract-tiles}
+after <- subtract_tiles(count_tiles(tile_pool()), count_tiles(tiles(5, "red")))
+sum(after$n)   # 106 - 1 = 105 tiles left
+```
+
+---
+
+# Script 01 — Valid melds (`scripts/01_valid_melds.R`)
+
+*Objective 1: identify valid *runs* and *groups*, compute their points and
+apply the opening rule of 30.*
+
+## `is_run(meld)`
+
+Is the meld a valid **run**? A run needs 3 or more consecutive tiles of the
+same colour; jokers substitute for the missing numbers.
+
+- **Arguments:** `meld`: a `data.frame(number, colour)`.
+- **Value:** `TRUE`/`FALSE`.
+
+```{r is-run}
+is_run(tiles(c(3, 4, 5), c("blue", "blue", "blue")))
+is_run(tiles(c(3, 4, 5), c("blue", "blue", "red")))   # different colours
+is_run(tiles(c(3, 5, 7), c("blue", "blue", "blue")))   # gaps
+```
+
+## `assign_run(meld)`
+
+Resolves the jokers of a valid run to their canonical numbers: first the
+internal gaps are filled, then the run is extended to the right.
+
+- **Arguments:** `meld`: a valid run.
+- **Value:** the resolved `data.frame(number, colour)`.
+- **Errors:** if `meld` is not a valid run.
+
+```{r assign-run}
+assign_run(tiles(c(5, NA, NA), c("blue", "wild", "wild")))  # -> 5,6,7
+```
+
+## `is_group(meld)`
+
+Is the meld a valid **group**? A group needs 3 or 4 tiles with the same
+number in different colours; jokers substitute for the missing colours.
+
+- **Arguments:** `meld`: a `data.frame(number, colour)`.
+- **Value:** `TRUE`/`FALSE`.
+
+```{r is-group}
+is_group(tiles(c(7, 7, 7), c("red", "blue", "black")))
+is_group(tiles(c(7, 7, 7), c("red", "red", "blue")))   # repeated colour
+```
+
+## `assign_group(meld)`
+
+Resolves the jokers of a valid group to their canonical colours (the free
+colours in the standard order).
+
+- **Arguments:** `meld`: a valid group.
+- **Value:** the resolved `data.frame(number, colour)`.
+- **Errors:** if `meld` is not a valid group.
+
+```{r assign-group}
+assign_group(tiles(c(7, 7, NA), c("red", "blue", "wild")))
+```
+
+## `is_valid_meld(meld)`
+
+Is the meld a valid run or a valid group?
+
+- **Arguments:** `meld`: a `data.frame(number, colour)`.
+- **Value:** `TRUE`/`FALSE`.
+
+```{r is-valid-meld}
+is_valid_meld(tiles(c(9, 10, 11), c("red", "red", "red")))
+is_valid_meld(tiles(c(2, 4, 6), c("red", "red", "red")))
+```
+
+## `meld_score(meld)`
+
+Points of a valid meld, using the canonical resolution of jokers (a joker
+counts as the tile it represents).
+
+- **Arguments:** `meld`: a valid meld.
+- **Value:** an integer with the point total.
+- **Errors:** if `meld` is not valid.
+
+```{r meld-score}
+meld_score(tiles(c(9, 10, 11), c("red", "red", "red")))   # 30
+meld_score(tiles(c(5, 5, 5), c("red", "blue", "yellow"))) # 15
+```
+
+## `meets_rule_30(melds)`
+
+Applies the **opening rule**: one or more melds whose points add up to at
+least 30.
+
+- **Arguments:** `melds`: a single meld or a list of melds.
+- **Value:** `TRUE`/`FALSE`.
+
+```{r meets-rule-30}
+meets_rule_30(list(
+  tiles(c(8, 9, 10), c("blue", "blue", "blue")),     # 27
+  tiles(c(4, 4, 4), c("red", "blue", "yellow"))      # 12
+))                                                    # 27 + 12 = 39
+```
+
+---
+
+# Script 02 — Drawing probability (`scripts/02_draw_probability.R`)
+
+*Objective 2: probability of drawing a useful tile from the pool.*
+
+Context: we know our hand and the tiles visible on the board; the opponent
+has drawn `n_opponent` unknown tiles. Drawing is modelled as **sampling
+without replacement**. For a single draw, the probability does not depend on
+`n_opponent` (the drawn tile is uniform over the available pool).
+
+## `available_pool(hand, board, n_opponent)`
+
+Inventory of the tiles still available: the complete pool minus the hand and
+the board.
+
+- **Arguments:**
+  - `hand`, `board`: `data.frame(number, colour)` or `NULL`.
+  - `n_opponent`: number of unknown tiles held by the opponent.
+- **Value:** an inventory `data.frame(number, colour, n)` with attribute
+  `total_available` (tiles left after also removing the opponent's).
+- **Errors:** if `n_opponent` is negative or larger than the pool.
+
+```{r available-pool}
+pool <- available_pool(hand = tiles(5, "red"))
+sum(pool$n)                                        # 105 tiles left
+attr(pool, "total_available")                      # 95 with 10 opponent tiles
+available_pool(hand = tiles(5, "red"), n_opponent = 10) |>
+  attr("total_available")
+```
+
+## `is_useful_tile(tile, hand)`
+
+Default "useful" criterion. A tile is useful if it improves the hand:
+
+- a joker is always useful;
+- it matches the number of a hand tile with a different colour (group);
+- it matches the colour of a hand tile and is a consecutive number (±1)
+  (run).
+
+- **Arguments:**
+  - `tile`: a 1-row `data.frame(number, colour)`.
+  - `hand`: the `data.frame(number, colour)` of the hand.
+- **Value:** `TRUE`/`FALSE`.
+
+```{r is-useful-tile}
+is_useful_tile(tiles(6, "red"), tiles(5, "red"))   # consecutive run tile
+is_useful_tile(tiles(9, "black"), tiles(5, "red")) # unrelated
+```
+
+## `useful_tiles(hand, board, n_opponent, is_useful)`
+
+Inventory of the available tile types considered useful.
+
+- **Arguments:** same as `available_pool()`, plus `is_useful`: the criterion
+  (defaults to `is_useful_tile`).
+- **Value:** an inventory `data.frame(number, colour, n)`.
+
+```{r useful-tiles}
+useful_tiles(tiles(5, "red"))
+```
+
+## `prob_draw_useful(hand, board, n_opponent, is_useful)`
+
+Probability that the next drawn tile is useful =
+useful copies / available copies.
+
+- **Arguments:** same as `useful_tiles()`.
+- **Value:** a probability in `[0, 1]`, or `NA` if there are no tiles left.
+
+```{r prob-draw-useful}
+prob_draw_useful(tiles(5, "red"))   # 12 / 105
+```
+
+---
+
+# Script 03 — Board verifier (`scripts/03_board_verifier.R`)
+
+*Objective 3: check that a board only contains valid combinations.*
+
+A board is a list of melds, or a `data.frame` with a `meld_id` column.
+`verify_board()` checks that (1) every meld is a valid run or group, and
+(2) the tiles are physically possible (no more copies than exist in the
+pool, no non-existent tiles such as a 14).
+
+## `board_to_list(board)`
+
+Normalizes a board to a list of melds.
+
+- **Arguments:** `board`: a list of melds, or a `data.frame` with `meld_id`.
+- **Value:** a list of `data.frame(number, colour)`.
+- **Errors:** if the input format is invalid.
+
+```{r board-to-list}
+board <- list(
+  tiles(c(3, 4, 5), c("red", "red", "red")),
+  tiles(c(7, 7, 7), c("blue", "yellow", "black"))
+)
+board_to_list(board_to_dataframe(board))   # round trip
+```
+
+## `board_to_dataframe(melds)`
+
+Converts a list of melds to a single `data.frame` with a `meld_id` column.
+
+- **Arguments:** `melds`: a list of melds.
+- **Value:** a `data.frame(meld_id, number, colour)`.
+
+```{r board-to-dataframe}
+board_to_dataframe(board)
+```
+
+## `check_physical(board_tiles)`
+
+Checks that the given tiles could physically exist in the pool.
+
+- **Arguments:** `board_tiles`: a `data.frame(number, colour)` with all the
+  tiles on the board.
+- **Value:** `list(ok, problems)`: `ok` is `TRUE`/`FALSE` and `problems` is
+  a character vector of messages.
+
+```{r check-physical}
+check_physical(tiles(c(12, 13, 14), c("red", "red", "red")))
+```
+
+## `verify_board(board, details)`
+
+Checks the whole board.
+
+- **Arguments:**
+  - `board`: a list of melds or a `data.frame` with `meld_id`.
+  - `details`: if `TRUE`, return the list below instead of `TRUE`/`FALSE`.
+- **Value:** `TRUE`/`FALSE`, or `list(valid, problems)` with `details = TRUE`.
+
+```{r verify-board}
+verify_board(board)
+verify_board(list(tiles(c(2, 4, 6), c("red", "red", "red"))), details = TRUE)
+```
+
+---
+
+# Script 04 — Board restructuring (`scripts/04_board_restructuring.R`)
+
+*Objective 4: find legal ways to place tiles from the hand by adding to,
+rearranging or splitting the melds already on the table.*
+
+In Rummikub, on later turns you may break and rearrange the combos on the
+table as long as everything remains valid at the end of the turn. Each move
+is validated with `verify_board()`. Every move is a list with:
+
+- `$board`: the resulting board (list of melds);
+- `$hand`: the resulting hand;
+- `$desc`: a readable description.
+
+## `tile_label(tile)`
+
+Human-readable label of a tile.
+
+- **Arguments:** `tile`: a 1-row `data.frame(number, colour)`.
+- **Value:** `"J"` for a joker, otherwise `"<number> <colour>"`.
+
+```{r tile-label}
+tile_label(tiles(NA, "wild"))
+tile_label(tiles(5, "red"))
+```
+
+## `meld_type(meld)`
+
+- **Arguments:** `meld`: a `data.frame(number, colour)`.
+- **Value:** `"run"`, `"group"`, or `"invalid"`.
+
+```{r meld-type}
+meld_type(tiles(c(3, 4, 5), c("red", "red", "red")))
+meld_type(tiles(c(3, 4), c("red", "red")))
+```
+
+## `resolved_meld(meld)`
+
+The meld with its jokers resolved to their canonical values.
+
+- **Arguments:** `meld`: a meld.
+- **Value:** the resolved `data.frame`, or `NULL` if the meld is invalid.
+
+## `move(board, hand, desc)`
+
+Helper that builds a move list.
+
+- **Arguments:** `board`, `hand`, `desc` (description string).
+- **Value:** `list(board, hand, desc)`.
+
+## `replace_meld(board, m, new_melds)`
+
+Replaces meld `m` of `board` with one or more new melds.
+
+- **Arguments:** `board`: a list of melds; `m`: the meld index;
+  `new_melds`: a list of replacement melds.
+- **Value:** the updated board.
+
+## `add_to_meld(meld, tile)`
+
+Tries to place a single tile on an existing meld: extend a run at its ends,
+fill a free colour of a group, or use a joker.
+
+- **Arguments:** `meld`: a meld; `tile`: a 1-row `data.frame`.
+- **Value:** the resulting meld if valid, or `NULL` if it cannot be done.
+
+```{r add-to-meld}
+add_to_meld(tiles(c(3, 4, 5), c("red", "red", "red")), tiles(6, "red"))
+add_to_meld(tiles(c(3, 4, 5), c("red", "red", "red")), tiles(9, "red"))  # gap
+```
+
+## `move_add_tile(board, hand)`
+
+Moves that place one tile from the hand on an existing meld.
+
+- **Arguments:** `board`, `hand`.
+- **Value:** a list of moves.
+
+```{r move-add-tile}
+moves <- move_add_tile(list(tiles(c(3, 4, 5), c("red", "red", "red"))),
+                       tiles(c(2, 6), c("red", "red")))
+vapply(moves, function(x) x$desc, character(1))
+```
+
+## `move_swap_joker(board, hand)`
+
+Replaces a joker on the table with a real tile from the hand and moves the
+freed joker to another meld. A joker never returns to the hand.
+
+- **Arguments:** `board`, `hand`.
+- **Value:** a list of moves.
+
+## `movable_tiles(meld)`
+
+Indices of the tiles that can be removed from a meld leaving a valid meld.
+
+- **Arguments:** `meld`: a meld.
+- **Value:** an integer vector of row indices.
+
+```{r movable-tiles}
+movable_tiles(tiles(c(3, 4, 5, 6), c("red", "red", "red", "red")))
+```
+
+## `move_transfer_tile(board, hand)`
+
+Moves that transfer a tile from one meld to another (both remain valid).
+Does not place tiles from the hand; it prepares the ground for other moves.
+
+- **Arguments:** `board`, `hand`.
+- **Value:** a list of moves.
+
+## `split_run(meld)`
+
+All the ways to split a joker-free run into two valid runs of at least 3
+tiles.
+
+- **Arguments:** `meld`: a run.
+- **Value:** a list of splits, each with `part1`, `part2` and `split_at`.
+
+```{r split-run}
+str(split_run(tiles(2:7, rep("red", 6))))
+```
+
+## `move_split_and_add(board, hand)`
+
+Moves that split a run into two valid runs and add a tile from the hand to
+one of the parts.
+
+- **Arguments:** `board`, `hand`.
+- **Value:** a list of moves.
+
+```{r move-split-and-add}
+moves <- move_split_and_add(list(tiles(2:7, rep("red", 6))), tiles(8, "red"))
+vapply(moves, function(x) x$desc, character(1))
+```
+
+## `find_moves(board, hand)`
+
+Collects **all** the moves above (add, swap joker, transfer, split & add)
+and returns them deduplicated by description.
+
+- **Arguments:** `board` (list of melds or `data.frame` with `meld_id`),
+  `hand`.
+- **Value:** a list of moves.
+
+```{r find-moves}
+moves <- find_moves(
+  list(tiles(c(3, 4, 5), c("red", "red", "red"))),
+  tiles(c(2, 6), c("red", "red"))
+)
+vapply(moves, function(x) x$desc, character(1))
+```
+
+## `move_descriptions(board, hand)`
+
+Just the descriptions of `find_moves()` (convenient for debugging).
+
+- **Arguments:** `board`, `hand`.
+- **Value:** a character vector.
+
+```{r move-descriptions}
+move_descriptions(list(tiles(c(3, 4, 5), c("red", "red", "red"))), tiles(6, "red"))
+```
+
+---
+
+# Script 05 — Board visualization (`scripts/05_board_visualization.R`)
+
+*Objective 5: represent the board state as a tidy `data.frame` or a plot.*
+
+## `order_meld(meld)`
+
+Orders the tiles of a meld: runs by number (jokers last), groups by the
+standard colour order.
+
+- **Arguments:** `meld`: a meld.
+- **Value:** the ordered `data.frame(number, colour)`.
+
+```{r order-meld}
+order_meld(tiles(c(5, 3, 4), c("red", "red", "red")))
+```
+
+## `board_to_data(board)`
+
+Board as a tidy `data.frame` with one row per tile.
+
+- **Arguments:** `board`: a list of melds or a `data.frame` with `meld_id`.
+- **Value:** `data.frame(meld, position, number, colour, label)`, where
+  `label` is the number or `"J"` for a joker.
+
+```{r board-to-data}
+board_to_data(board)
+```
+
+## `show_board(board)`
+
+Prints a readable description of the board to the console.
+
+- **Arguments:** `board`.
+- **Value:** `invisible(NULL)`.
+
+```{r show-board}
+show_board(board)
+```
+
+## `plot_board(board, title)`
+
+Plots the board with **ggplot2**: one cell per tile, coloured by colour and
+labelled on top.
+
+- **Arguments:** `board`; `title`: plot title.
+- **Value:** a `ggplot` object (requires `ggplot2`).
+
+```{r plot-board, warning = FALSE, fig.height = 3.5, fig.width = 7}
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  plot_board(list(
+    tiles(c(3, 4, 5), c("red", "red", "red")),
+    tiles(c(7, 7, NA), c("blue", "yellow", "wild"))
+  ))
+}
+```
+
+---
+
+# Script 06 — Opening analysis (`scripts/06_opening_analysis.R`)
+
+*Objective 6, analysis A: the opening (rule of 30).*
+
+Questions answered: (1) with what probability can you open using only the 14
+initial tiles? (2) how many draws are needed on average to open when the
+initial hand cannot reach 30?
+
+The methods are **exact** (a branch-and-bound solver enumerates disjoint
+melds) wrapped in a **Monte Carlo** simulation.
+
+## `random_hand(k)`
+
+- **Arguments:** `k`: number of tiles (default 14).
+- **Value:** `k` random tiles from the pool, without replacement.
+
+```{r random-hand}
+random_hand(5)
+```
+
+## `prepare_hand(hand)`
+
+Compact representation of a hand as counters per tile type.
+
+- **Arguments:** `hand`: a `data.frame(number, colour)`.
+- **Value:** `list(types, joker_idx)`:
+  - `types`: `data.frame(number, colour, n, value)` with one row per present
+    type (`value` is the tile number, `13` as an upper bound for jokers);
+  - `joker_idx`: index of the joker row (`integer(0)` if none).
+
+```{r prepare-hand}
+prep <- prepare_hand(tiles(c(4, 5, 6, 6, 6), c("red", "red", "red", "blue", "yellow")))
+prep$types
+```
+
+## `possible_melds(prep)`
+
+Enumerates all melds (runs and groups, jokers included) formable with the
+hand.
+
+- **Arguments:** `prep`: the output of `prepare_hand()`.
+- **Value:** `list(M, sums)`:
+  - `M`: matrix (melds × types) with the tiles each meld uses;
+  - `sums`: the point total of each meld.
+
+```{r possible-melds}
+melds <- possible_melds(prep)
+nrow(melds$M)          # number of formable melds
+head(melds$sums, 8)    # their points
+```
+
+## `solve_opening(hand, target)`
+
+Exact maximum score achievable with disjoint melds of the hand.
+
+- **Arguments:** `hand`; `target`: with a finite value the search stops as
+  soon as it is reached (ideal for the rule of 30); with `Inf` it computes
+  the exact maximum.
+- **Value:** an integer score (0 if no meld can be formed).
+
+```{r solve-opening}
+solve_opening(tiles(c(4, 5, 6, 4, 5, 6, NA),
+                    c(rep("red", 3), rep("blue", 3), "wild")))
+```
+
+## `can_open(hand)`
+
+Can the hand open under the rule of 30?
+
+- **Arguments:** `hand`.
+- **Value:** `TRUE`/`FALSE`.
+
+```{r can-open}
+can_open(tiles(c(9, 10, 11, NA), c("red", "red", "red", "wild")))
+```
+
+## `max_opening(hand)`
+
+Exact maximum opening score (for the score distribution).
+
+- **Arguments:** `hand`.
+- **Value:** an integer.
+
+```{r max-opening}
+max_opening(tiles(c(3, 4, 5, 6, 7), rep("red", 5)))   # 3+4+5+6+7 = 25
+```
+
+## `simulate_draws_until_open()`
+
+Draws tiles one at a time from the pool until the hand can open.
+
+- **Arguments:** none.
+- **Value:** the number of draws needed (0 if the 14 initial tiles already
+  open).
+
+```{r simulate-draws}
+set.seed(1)
+simulate_draws_until_open()
+```
+
+## Running the analysis
+
+When launched directly (`Rscript scripts/06_opening_analysis.R`), the script
+runs 5,000 random hands plus 5,000 draw simulations, prints a summary to the
+console and saves the results in `results/`:
+
+- `opening_probability.csv` — probability of opening with the 14 initial
+  tiles (with 95% confidence interval).
+- `opening_max_score.csv` — maximum opening score per hand.
+- `opening_draws.csv` — draws needed per simulated game.
+- `opening_draws_distribution.csv` — distribution of draws.
+- `opening_draws_summary.csv` — summary statistics.
+- `opening_score_histogram.png` — histogram of the maximum score.
+- `opening_cumulative_probability.png` — cumulative probability of having
+  opened after `t` draws.
+
+---
+
+# Summary table
+
+| Script | Key functions |
+|--------|---------------|
+| `00_tile_pool.R` | `tile_pool()`, `tiles()`, `is_joker()`, `count_tiles()`, `subtract_tiles()` |
+| `01_valid_melds.R` | `is_run()`, `is_group()`, `assign_run()`, `assign_group()`, `is_valid_meld()`, `meld_score()`, `meets_rule_30()` |
+| `02_draw_probability.R` | `available_pool()`, `is_useful_tile()`, `useful_tiles()`, `prob_draw_useful()` |
+| `03_board_verifier.R` | `board_to_list()`, `board_to_dataframe()`, `check_physical()`, `verify_board()` |
+| `04_board_restructuring.R` | `add_to_meld()`, `move_add_tile()`, `move_swap_joker()`, `move_transfer_tile()`, `move_split_and_add()`, `find_moves()`, `move_descriptions()` |
+| `05_board_visualization.R` | `order_meld()`, `board_to_data()`, `show_board()`, `plot_board()` |
+| `06_opening_analysis.R` | `random_hand()`, `prepare_hand()`, `possible_melds()`, `solve_opening()`, `can_open()`, `max_opening()`, `simulate_draws_until_open()` |
+
+Rendered from `reports/function_reference.qmd` with Quarto.

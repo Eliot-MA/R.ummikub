@@ -3,3 +3,6 @@
 .RData
 .Ruserdata
 Untitled.R
+
+# Generated simulation outputs (reproducible with scripts/06_opening_analysis.R)
+results/
