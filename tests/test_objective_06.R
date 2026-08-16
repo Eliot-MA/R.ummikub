@@ -33,6 +33,19 @@ test_that("possible_melds generates valid runs and groups", {
   expect_true(30 %in% melds$sums || any(melds$sums >= 18))
 })
 
+test_that("possible_melds does not generate 2-tile runs", {
+  # (12,13) of the same colour is NOT a valid meld (runs need >= 3 tiles)
+  hand <- tiles(c(12, 13), c("blue", "blue"))
+  melds <- possible_melds(prepare_hand(hand))
+  expect_equal(nrow(melds$M), 0)
+  expect_false(is_valid_meld(hand))
+  # with a joker the run can only be 11-12-13 (joker as 11): 36 points
+  hand2 <- tiles(c(12, 13, NA), c("blue", "blue", "wild"))
+  melds2 <- possible_melds(prepare_hand(hand2))
+  expect_equal(nrow(melds2$M), 1)
+  expect_equal(melds2$sums, 36L)
+})
+
 test_that("max_opening uses each tile only once (single run)", {
   # red 3,4,5,6,7: the best play is the full run 3+4+5+6+7 = 25
   hand <- tiles(c(3, 4, 5, 6, 7), rep("red", 5))

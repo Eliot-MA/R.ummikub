@@ -105,7 +105,9 @@ possible_melds <- function(prep) {
     if (length(ids) == 0L) next
     nums <- types$number[ids]
     for (lo in 1:12) {
-      for (hi in (lo + 2):13) {
+      hi_start <- lo + 2L
+      if (hi_start > 13L) next
+      for (hi in hi_start:13) {
         L <- hi - lo + 1L
         present <- unique(nums[nums >= lo & nums <= hi])
         if (length(present) == 0L) next
