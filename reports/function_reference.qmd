@@ -18,7 +18,7 @@ This project provides a set of **R functions** to analyze the board game
 write code that helps us understand the rules, probabilities and strategies
 of the game.
 
-The functions are organized into 7 scripts, one per objective. Every script
+The functions are organized into 8 scripts, one per objective. Every script
 loads the shared ones it needs with `source()`, so all of them use the same
 tile representation.
 
@@ -43,7 +43,8 @@ melds, or a single `data.frame` with an extra `meld_id` column.
 | `scripts/03_board_verifier.R`     | 3: validate board combinations                         |
 | `scripts/04_board_restructuring.R`| 4: rearrange existing combos                           |
 | `scripts/05_board_visualization.R`| 5: board as `data.frame` / plot                        |
-| `scripts/06_opening_analysis.R`   | 6: opening analysis (rule of 30, Monte Carlo)          |
+| `scripts/06_opening_analysis.R`   | 6 (analysis A): opening analysis (rule of 30, Monte Carlo)          |
+| `scripts/07_runs_vs_groups.R`     | 6 (analysis B): runs vs groups (relative frequency, heatmap)        |
 | `reports/function_reference.qmd`  | This document                                          |
 
 ## Setup
@@ -59,6 +60,7 @@ source("../scripts/03_board_verifier.R")
 source("../scripts/04_board_restructuring.R")
 source("../scripts/05_board_visualization.R")
 source("../scripts/06_opening_analysis.R")
+source("../scripts/07_runs_vs_groups.R")
 ```
 
 ::: {.callout-note}
@@ -658,9 +660,11 @@ Enumerates all melds (runs and groups, jokers included) formable with the
 hand.
 
 - **Arguments:** `prep`: the output of `prepare_hand()`.
-- **Value:** `list(M, sums)`:
+- **Value:** `list(M, sums, type)`:
   - `M`: matrix (melds × types) with the tiles each meld uses;
-  - `sums`: the point total of each meld.
+  - `sums`: the point total of each meld;
+  - `type`: `"run"` or `"group"` for each meld (a meld made of a single real
+    tile plus jokers could be either, so the type is tagged at generation).
 
 ```{r possible-melds}
 melds <- possible_melds(prep)
@@ -735,6 +739,65 @@ console and saves the results in `results/`:
 
 ---
 
+# Script 07 — Runs vs groups (`scripts/07_runs_vs_groups.R`)
+
+*Objective 6, analysis B: relative frequency of runs and groups in random
+hands, and a heatmap of melds by tile number.*
+
+The melds are enumerated **exactly** with `possible_melds()` from script 06,
+which tags each meld as `"run"` or `"group"`. This type cannot be re-derived
+from the tile matrix alone, because a meld made of a single real tile plus
+jokers could be either.
+
+## `tally_hand_melds(prep)`
+
+Counts, for one prepared hand, the formable melds by type and by tile number.
+
+- **Arguments:** `prep`: the output of `prepare_hand()`.
+- **Value:** a list with `n_runs`, `n_groups` and the heat vectors
+  `heat_run` / `heat_group` (integer(13): number of melds of each type that
+  use each tile number).
+
+```{r tally-hand}
+tally_hand_melds(prepare_hand(tiles(c(4, 5, 6, 6, 6),
+                                    c("red", "red", "red", "yellow", "black"))))
+```
+
+## `tally_runs_groups(n_hands, k, seed)`
+
+Monte Carlo tally over random hands.
+
+- **Arguments:** `n_hands`: number of hands (default 10000); `k`: tiles per
+  hand (default 14); `seed`: optional seed for reproducibility.
+- **Value:** a list with:
+  - `per_hand`: `data.frame(n_runs, n_groups)` with one row per hand;
+  - `heat`: `data.frame(number, run, group)` with the total number of melds
+    of each type that use each tile number (1 to 13);
+  - `n_hands`, `k`: the parameters used.
+
+```{r tally-runs-groups}
+set.seed(1)
+res <- tally_runs_groups(50L)
+sum(res$per_hand$n_runs)   # total runs
+head(res$heat, 4)
+```
+
+## Running the analysis
+
+When launched directly (`Rscript scripts/07_runs_vs_groups.R`), the script
+runs 10,000 random hands, prints a summary to the console and saves the
+results in `results/`:
+
+- `runs_vs_groups_per_hand.csv` — runs and groups per hand.
+- `runs_vs_groups_summary.csv` — aggregate statistics (relative frequency,
+  mean melds per hand, dominance of each type).
+- `runs_vs_groups_heatmap.csv` — melds by tile number and type
+  (total and mean per hand).
+- `runs_vs_groups_distribution.png` — histogram of melds per hand by type.
+- `runs_vs_groups_heatmap.png` — heatmap of melds by tile number and type.
+
+---
+
 # Summary table
 
 | Script | Key functions |
@@ -745,6 +808,8 @@ console and saves the results in `results/`:
 | `03_board_verifier.R` | `board_to_list()`, `board_to_dataframe()`, `check_physical()`, `verify_board()` |
 | `04_board_restructuring.R` | `add_to_meld()`, `move_add_tile()`, `move_swap_joker()`, `move_transfer_tile()`, `move_split_and_add()`, `find_moves()`, `move_descriptions()` |
 | `05_board_visualization.R` | `order_meld()`, `board_to_data()`, `show_board()`, `plot_board()` |
+| `06_opening_analysis.R` | `random_hand()`, `prepare_hand()`, `possible_melds()`, `solve_opening()`, `can_open()`, `max_opening()`, `simulate_draws_until_open()` |
+| `07_runs_vs_groups.R` | `tally_hand_melds()`, `tally_runs_groups()` |
 | `06_opening_analysis.R` | `random_hand()`, `prepare_hand()`, `possible_melds()`, `solve_opening()`, `can_open()`, `max_opening()`, `simulate_draws_until_open()` |
 
 Rendered from `reports/function_reference.qmd` with Quarto.

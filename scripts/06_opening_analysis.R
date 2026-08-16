@@ -90,12 +90,15 @@ prepare_hand <- function(hand) {
 # of jokers. Returns a list with:
 #   - `M`   : matrix (melds x types), how many tiles of each type it uses.
 #   - `sums`: points of each meld (jokers with the value they represent).
+#   - `type`: "run" or "group" for each meld (a meld made of a single real
+#             tile plus jokers could be either, so it must be tagged).
 possible_melds <- function(prep) {
   types <- prep$types
   m <- nrow(types)
   n_jokers <- if (length(prep$joker_idx)) types$n[prep$joker_idx] else 0L
   rows <- list()
   sums <- list()
+  meld_type <- character(0)
 
   # Runs: window [lo, hi] of the same colour; the numbers missing inside
   # the window are covered by the jokers.
@@ -118,6 +121,7 @@ possible_melds <- function(prep) {
         if (missing > 0L) count[prep$joker_idx] <- missing
         rows[[length(rows) + 1L]] <- count
         sums[[length(sums) + 1L]] <- as.integer(L * (lo + hi) / 2)
+        meld_type <- c(meld_type, "run")
       }
     }
   }
@@ -141,15 +145,18 @@ possible_melds <- function(prep) {
           if (j > 0L) count[prep$joker_idx] <- j
           rows[[length(rows) + 1L]] <- count
           sums[[length(sums) + 1L]] <- n * total
+          meld_type <- c(meld_type, "group")
         }
       }
     }
   }
 
   if (length(rows) == 0L) {
-    return(list(M = matrix(integer(0), nrow = 0, ncol = m), sums = integer(0)))
+    return(list(M = matrix(integer(0), nrow = 0, ncol = m),
+                sums = integer(0), type = character(0)))
   }
-  list(M = do.call(rbind, rows), sums = as.integer(unlist(sums)))
+  list(M = do.call(rbind, rows), sums = as.integer(unlist(sums)),
+       type = meld_type)
 }
 
 # --- Exact resolution ------------------------------------------------

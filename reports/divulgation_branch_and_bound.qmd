@@ -1,0 +1,373 @@
+---
+title: "Rummikub and Branch & Bound"
+subtitle: "How a machine decides whether your hand can open"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    theme: cosmo
+    code-fold: false
+    self-contained: true
+    lightbox: true
+bibliography: ../bib/bibliography.bib
+---
+
+> **Draft.** This document is a first pass at explaining, to a human reader,
+> the exact algorithm used by `solve_opening()` in this repository. It is
+> written "from the doubts": every section starts from a real question that
+> was asked while reading the code, and each question is the door to a
+> formal concept. Sections will be deepened one by one.
+
+# A question from the game table
+
+You draw your 14 tiles in Rummikub. To "open", you must lay on the table one
+or more melds whose total is **at least 30 points** — and you may touch no
+tile that is already on the board.
+
+Natural questions:
+
+1. **How often** can a random hand of 14 tiles open on its first turn?
+2. If it cannot, **how many draws** do you need on average before it can?
+
+The answer to (1) is **about 49.5%** of hands, and (2) is **about 2.4 draws**
+(we will come back to these numbers in [Honest science](#honest-science)).
+
+But notice what the machine must do to answer (1): for *each* simulated hand
+it must decide exactly whether a 30-point opening exists. "Exactly" is the
+hard part. A hand of 14 tiles can form hundreds of candidate melds, and melds
+share tiles, so "try all combinations" is not obviously fast.
+
+::: {.callout-note}
+**Concept box — optimization**
+Deciding *does an opening exist?* is an optimization problem: find the
+maximum total score achievable with a valid set of melds, and compare it to
+30. The algorithm that solves it exactly — in milliseconds — is the topic of
+this text: **branch & bound**.
+:::
+
+# The mathematical problem under the hood
+
+What does it mean that the melds are *disjoint*? Simply that you cannot play
+the same physical tile twice: if a meld uses the tile `4blue`, no other meld
+in your opening may use it. Melds that share no tile are called
+**disjoint**.
+
+This little word is the heart of the problem. Think of each meld as a
+*set* of tiles. We must choose a collection of sets that:
+
+- do not **overlap** (the disjoint condition), and
+- **maximize** the sum of their values.
+
+This is a well-known combinatorial problem:
+
+::: {.callout-important}
+**Formal concept — weighted set packing**
+Choosing non-overlapping sets to maximize the total value is **weighted set
+packing** — a problem with deep roots in combinatorial optimization. It is
+equivalent to an **integer program (0-1)**: one binary variable per candidate
+meld, a constraint *sum ≤ 1* for every tile (each tile can belong to at most
+one chosen meld), and an objective of maximizing the weighted sum
+[@barnhart1998]. Set packing is one of the original NP-complete problems
+identified by Karp in 1972 [@karp1972], and its many relatives are catalogued
+in the standard reference on intractability [@garey1979]. So in the worst
+case any exact algorithm can take exponential time — and even *approximating*
+it is hard: it cannot be approximated within a factor of Ω(k/log k) unless
+P = NP [@hazan2006], where k is the largest size of a set.
+:::
+
+Why does this matter to you as a player? Because it tells you *why* there is
+no obvious shortcut. The hardness is not just theoretical: the most natural
+greedy idea — always take the most valuable meld that still fits — has a
+worst-case guarantee that grows with k, the size of the largest meld
+[@chandra2001]. Rummikub melds are small (a group has at most 4 tiles, a run
+at most 13), yet the hand h1 below will show that even at this scale the
+greedy can be wrong. And the warning stands: an exact algorithm must be
+exponential in the worst case, so the practical trick is to make the
+*typical* case fast.
+
+# The idea: search, but search smartly
+
+What is branch & bound, and what are the branches?
+
+Branch & bound answers two questions at once:
+
+- **How do we explore all possibilities without repeating any?**
+  (*branching*)
+- **How do we skip most of them anyway?** (*bounding* + *pruning*)
+
+Branching builds a **decision tree**. At every node we pick one tile and ask:
+*do we discard it, or use it in one of the melds that contains it?* Each
+answer is a branch. Every complete path through the tree is a complete
+decision about every tile, and the tree visits every possible play exactly
+once. The general scheme — *branch*, *bound*, *prune* — is one of the oldest
+tools of combinatorial optimization; its first systematic treatment dates
+back to Lawler and Wood's survey [@lawler1966].
+
+We will use one hand throughout the text. Call it **h1**:
+
+- `2blue 3blue 4blue 5blue` plus an extra `4blue`, plus `4black 4yellow`.
+
+It can form four melds:
+
+| Meld  | Tiles            | Points |
+|-------|------------------|--------|
+| M01   | 2 3 4 (blue)     | 9      |
+| M02   | 2 3 4 5 (blue)   | 14     |
+| M03   | 3 4 5 (blue)     | 12     |
+| M04   | 4blue 4yellow 4black | 12 |
+
+Note the conflict: M02 wants *one* `4blue`, but the extra `4blue` is what
+M04 needs. Some tile must be sacrificed. The tree below is the machine
+exploring that conflict.
+
+![Search tree for h1 with no target (exact maximum). Orange edges highlight
+the path of each node that improved the best score; the red `x` is a pruned
+branch.](./../results/demo_bnb_example1_max.png)
+
+## The most constrained tile
+
+What is the most constrained tile, and why is it safe to force the choice on
+it?
+
+At the root, h1 has six tile types. The algorithm does not pick a random
+tile: it picks the one that belongs to the *fewest* usable melds. That is
+`4yellow`, which appears only in M04. The question "discard it or use it?"
+then splits the problem in two, and **every** possible play falls into one of
+the two branches — nothing is lost, so the search stays exact.
+
+::: {.callout-note}
+**Formal concept — MRV / fail-first**
+Picking the most restricted variable first is the **minimum remaining values
+(MRV)** heuristic of constraint satisfaction (CSP), also known as the
+**fail-first principle**: a tile that fits in few melds is the one most
+likely to close a branch quickly, and failing early costs the least.
+:::
+
+The "safe" property is what mathematicians call **completeness**: we only
+ever reduce a node to the two cases *use* or *discard*, and those two cases
+cover everything.
+
+# The bound: an impossible budget
+
+What exactly does `acc + sum(remaining * values)` do?
+
+Two ingredients:
+
+- `acc` — the score already accumulated along the path from the root to this
+  node;
+- `remaining` — how many copies of each tile type are still unused;
+- `values` — the point value of each tile type.
+
+The quantity `acc + sum(remaining * values)` is a **bound**: the best score
+this node could *possibly* reach. Why "possibly"? Because it assumes we can
+use **every** remaining tile in a meld, simultaneously — which is usually
+impossible, since melds must be disjoint. It is an *optimistic* estimate.
+
+In the h1 trace, the root reports:
+
+```
+[N01] remaining: 2bluex1 3bluex1 4bluex2 4yellowx1 4blackx1 5bluex1
+      acc= 0  best= 0  BOUND=acc+sum(remaining)=26
+```
+
+The five tile types sum to 26, so no play of h1 can ever exceed 26 points.
+That single number already tells us something the player can feel at the
+table: *h1 cannot open* (26 < 30), before exploring anything.
+
+::: {.callout-important}
+**Formal concept — relaxation and admissible heuristics**
+Dropping the "disjoint" restriction gives an easier problem whose answer is
+an upper bound on the real one. That is exactly the idea behind the
+**linear programming relaxation** that powers modern solvers and
+**branch-and-price** methods for huge integer programs [@barnhart1998]. A
+heuristic that never underestimates is called **admissible**, and it is
+exactly the condition that makes the search optimal (the same condition A*
+requires for shortest paths).
+:::
+
+Because every tile value is non-negative, the bound can only **decrease**
+as we go down the tree. We will use that in the next section.
+
+# Pruning: cutting without breaking
+
+What is pruning? And why does it not make the algorithm any less exact?
+
+At any node we know two numbers: the current global best score `best`, and
+the node's own optimistic bound. If
+
+```
+bound <= best
+```
+
+then this node cannot possibly beat the best we already found — even if it
+used every remaining tile. We **discard the whole subtree**. In the h1 trace
+this happens exactly once, at the very end:
+
+```
+[N13] remaining: 5bluex1                   acc=21  best=26  BOUND=acc+sum(remaining)=26
+      PRUNE: bound 26 <= best 26 -> this branch cannot improve, discard
+```
+
+**Why is it exact?** Because the bound never underestimates: any score
+reachable inside the subtree is *at most* the bound, so if the bound cannot
+beat `best`, neither can any descendant. Cutting such a subtree loses no
+possible improvement. This is a **dominance argument**, and it is the same
+logic behind **alpha-beta pruning** in game tree search (there the roles of
+`best` are played by alpha/beta).
+
+# How the tree is explored: recursion and backtracking
+
+Why does the 'use 3blue' branch not appear until much later? Where did it go?
+
+Look again at the trace. `3blue` can be used in M03 (`3blue 4blue 5blue`).
+You would expect that branch right after the root's "discard `4yellow`"
+branch. But in the trace it appears **after** a leaf, like this:
+
+```
+[N01] ... BOUND=26
+  MOST CONSTRAINED tile: 4yellow
+  BRANCH A: discard 4yellow
+  [N02] ...
+    BRANCH A: discard 2blue
+    [N03] ...
+      MOST CONSTRAINED tile: 3blue
+      BRANCH A: discard 3blue
+      [N04] remaining: 4bluex2 4blackx1 5bluex1  acc= 0 ... best=0
+        leaf: no meld fits anymore -> best=0
+      BRANCH B: use 3blue in meld [12=3blue 4blue 5blue]
+      [N05] remaining: 4bluex1 4blackx1        acc=12 ... best=0
+        leaf: no meld fits anymore -> best=12
+```
+
+The "missing" branch is **N05** — it simply comes *after* the leaf N04, not
+before it. The algorithm is **depth-first**: it goes down a branch as far as
+it can (to a leaf), then *backtracks* to the last unfinished decision and
+tries the other side. The exploration is a stack: enter a node, descend,
+return, descend the next option.
+
+::: {.callout-note}
+**Formal concept — DFS and backtracking**
+This is **depth-first search** over a recursion tree, the classic
+**backtracking** pattern: *choose → expand → undo*. The call stack of the
+program *is* the memory of the pending decisions. Everything you see in the
+console trace `[N01] ... [N13]` is the stack being pushed and popped.
+:::
+
+The "bitácora" quality of the trace — the indentation shows the depth, the
+`[N..]` number shows the visit order — is precisely what makes the
+algorithm teachable: *read the trace in order and you are watching the stack
+breathe*.
+
+# The shortcuts: when there is nothing to search
+
+Two special cases are solved with **zero** search:
+
+**Shortcut 1 — you already win.** If any single meld already reaches the
+target (≥ 30), you can open with just that meld. Example: the hand
+`6..13 blue` has a run of eight tiles worth 76 points, so the machine
+answers immediately. The trace prints `done in zero time`.
+
+**Shortcut 2 — you can never win.** If the sum of *all* tile values in the
+hand is below the target, even using every tile is not enough. h1 (sum 26)
+hits this case with target 30.
+
+These are the **trivial cases** of the problem — they do not change the
+worst-case complexity, but they make the *typical* game instant.
+
+# Best-first is not greedy
+
+Here is the subtlest question of all: if the branches are ordered by points,
+is the algorithm not just "take the best and done" — a greedy method?
+
+No, and the difference is crucial:
+
+- **Ordering** decides *which* branch to explore first. Branch & bound
+  orders the "use" branches by meld value, best first. But it still explores
+  *every* non-pruned branch. The ordering is just a preference; it changes
+  *speed*, never *correctness*.
+- **A greedy method** *decides* permanently: take the best meld, remove its
+  tiles, repeat — and never reconsider. It can walk straight into a trap.
+
+Example 3 in the demo shows the trap. The hand is:
+
+```
+2blue 3blue 4blue 5blue 6blue  3yellow 3black 4yellow 4black
+```
+
+The greedy method (always take the most valuable meld) returns **20
+points**. The exact optimum is **24** — a combination the greedy never
+considers because its first, locally best choice blocks it.
+
+| Method              | Score |
+|---------------------|-------|
+| Greedy (best first) | 20    |
+| Branch & bound      | 24    |
+| Brute force         | 24    |
+
+This is not an anecdote. In the approximation literature, the plain greedy
+algorithm for weighted k-set packing is known to be only a k-approximation
+in the worst case [@chandra2001]: "take the best and never look back" can
+fall arbitrarily far from the optimum, exactly as h3 does.
+
+::: {.callout-warning}
+**Lesson.** A *heuristic ordering* inside an exhaustive search is not the
+same as a *heuristic decision*. The first only reorders the work; the second
+may throw away the optimum. This confusion between "order of exploration"
+and "choice" is the most common source of the greedy illusion.
+:::
+
+# Honest science: verify, don't trust
+
+How do we *know* the exact search is actually exact? By testing it against
+an independent, dumber oracle, and by acknowledging the bugs we find.
+
+**Brute force as oracle.** The demo implements `brute_max()`: it enumerates
+every combination of disjoint melds with no pruning and no heuristics —
+correct by construction, too slow for large hands. Comparing the two over
+random hands:
+
+```
+Verified 200 random hands in 1.5s
+  branch&bound == brute force in 200/200 cases
+  The greedy fell short in 2 of 200 hands (1.0%)
+```
+
+**Monte Carlo as statistics.** The opening analysis simulates thousands of
+random hands (exactly solved), giving the numbers from the opening of this
+text: 49.5% of hands open (95% CI 48.1%–50.8%), 2.40 draws on average.
+
+**And the bug we actually found.** While teaching the algorithm, a regression
+test revealed that `possible_melds()` could generate *runs of two tiles*
+(12-13 of one colour = 25 points), which are not legal melds. That inflated
+the opening statistics (the old 53.5% is wrong). The fix was one guard in
+the loop; a regression test now locks it. Two lessons:
+
+- an *algorithmically* correct search is worthless if the *case base*
+  (what counts as a meld) is wrong;
+- statistics published from a buggy generator are quietly wrong — which is
+  why the tests live next to the simulations.
+
+::: {.callout-note}
+**Methodological box.** Exact code is not enough; you need (a) an
+independent oracle for small instances, (b) statistical sanity checks on
+large ones, and (c) regression tests on every bug found. All three are in
+this repository.
+:::
+
+# Reproduce it
+
+Everything in this text is reproducible from the repository root:
+
+```bash
+# The traced algorithm, the greedy trap, the brute-force oracle, the tree
+Rscript scripts/demo_branch_and_bound.R
+
+# The opening statistics (Monte Carlo with exact solving)
+Rscript scripts/06_opening_analysis.R
+
+# The test suite (including the regression test for the 2-tile run bug)
+Rscript -e "testthat::test_file('tests/test_objective_06.R')"
+```
+
+The figures in this document are generated by the demo script and written to
+`results/` (a directory of generated outputs, not tracked in git).

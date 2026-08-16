@@ -64,6 +64,7 @@ strategies of the game.
 | `scripts/04_board_restructuring.R`      | Objective 4: rearrange existing combos                   |
 | `scripts/05_board_visualization.R`      | Objective 5: board as `data.frame` / plot                |
 | `scripts/06_opening_analysis.R`         | Objective 6: opening analysis (rule of 30, Monte Carlo)  |
+| `scripts/07_runs_vs_groups.R`           | Objective 6: runs vs groups (relative frequency, heatmap) |
 | `tests/`                                | `testthat` tests (`Rscript -e "testthat::test_file('tests/test_objective_01.R')"`) |
 
 Scripts load the pool from `00_tile_pool.R` via `source()`, so that all of
@@ -100,15 +101,15 @@ them use the same tile representation.
 - [x] **Objective 6, Opening**: probability of opening with only the 14
       starting tiles; expected number of draws needed to open when the hand
       cannot reach 30. Implemented and tested (22 tests).
-- [ ] **Objective 6, Runs vs groups**: relative frequency of runs and groups
-      in random hands; heatmap of melds by tile number.
+- [x] **Objective 6, Runs vs groups**: relative frequency of runs and groups
+      in random hands (exact meld enumeration, tagged by type); heatmap of
+      melds by tile number. Implemented and tested (26 tests).
 - [ ] **Objective 6, Value of drawing**: when drawing beats waiting for a
       restructuring play; which tile types unlock the most plays.
 
 Tools (objectives 1-5) are implemented and tested (**133 tests passing**),
-and the opening analysis (objective 6) adds 22 more (**155 tests passing
-in total**). The remaining game-analysis phases (runs vs groups, value of
-drawing) are planned.
+and the two analyses of objective 6 add 48 more (**181 tests passing in
+total**). The remaining game-analysis phase (value of drawing) is planned.
 
 ## Open questions / to decide
 
