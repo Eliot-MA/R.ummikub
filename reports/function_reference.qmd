@@ -708,6 +708,21 @@ Exact maximum opening score (for the score distribution).
 max_opening(tiles(c(3, 4, 5, 6, 7), rep("red", 5)))   # 3+4+5+6+7 = 25
 ```
 
+## `solve_opening_coverage(hand)`
+
+Maximum number of tiles coverable with **disjoint** melds of the hand
+(coverage version of `solve_opening()`). Used by analysis B to decide which
+melds can actually be played together.
+
+- **Arguments:** `hand`.
+- **Value:** an integer (0 if no meld can be formed).
+
+```{r solve-opening-coverage}
+solve_opening_coverage(tiles(c(3, 4, 5, 6, 3, 3),
+                             c("red", "red", "red", "red", "blue", "black")))
+# run 4-5-6 + group of 3s cover 6 tiles (more than the run 3-4-5-6 alone)
+```
+
 ## `simulate_draws_until_open()`
 
 Draws tiles one at a time from the pool until the hand can open.
@@ -744,23 +759,25 @@ console and saves the results in `results/`:
 *Objective 6, analysis B: relative frequency of runs and groups in random
 hands, and a heatmap of melds by tile number.*
 
-The melds are enumerated **exactly** with `possible_melds()` from script 06,
-which tags each meld as `"run"` or `"group"`. This type cannot be re-derived
-from the tile matrix alone, because a meld made of a single real tile plus
-jokers could be either.
+The tally uses the **optimal playable combination** of each hand, not the
+raw candidate list: `coverage_solver()` (from script 06) runs a branch &
+bound that maximizes the number of tiles covered with **disjoint** melds.
+Overlapping melds (e.g. the sub-runs inside a longer run) can never both
+appear in a solution, so a hand of `k` tiles never plays more than
+`floor(k / 3)` melds and each tile is counted at most once.
 
 ## `tally_hand_melds(prep)`
 
-Counts, for one prepared hand, the formable melds by type and by tile number.
+Tallies the optimal disjoint play of one prepared hand.
 
 - **Arguments:** `prep`: the output of `prepare_hand()`.
-- **Value:** a list with `n_runs`, `n_groups` and the heat vectors
-  `heat_run` / `heat_group` (integer(13): number of melds of each type that
-  use each tile number).
+- **Value:** a list with `covered` (tiles used), `n_runs`, `n_groups` and
+  the heat vectors `heat_run` / `heat_group` (integer(13): number of played
+  melds of each type that use each tile number).
 
 ```{r tally-hand}
-tally_hand_melds(prepare_hand(tiles(c(4, 5, 6, 6, 6),
-                                    c("red", "red", "red", "yellow", "black"))))
+tally_hand_melds(prepare_hand(tiles(c(3, 4, 5, 6, 3, 3),
+                                    c("red", "red", "red", "red", "blue", "black"))))
 ```
 
 ## `tally_runs_groups(n_hands, k, seed)`
@@ -770,15 +787,16 @@ Monte Carlo tally over random hands.
 - **Arguments:** `n_hands`: number of hands (default 10000); `k`: tiles per
   hand (default 14); `seed`: optional seed for reproducibility.
 - **Value:** a list with:
-  - `per_hand`: `data.frame(n_runs, n_groups)` with one row per hand;
-  - `heat`: `data.frame(number, run, group)` with the total number of melds
-    of each type that use each tile number (1 to 13);
+  - `per_hand`: `data.frame(n_runs, n_groups, covered)` with one row per
+    hand;
+  - `heat`: `data.frame(number, run, group)` with the total number of played
+    melds of each type that use each tile number (1 to 13);
   - `n_hands`, `k`: the parameters used.
 
 ```{r tally-runs-groups}
 set.seed(1)
 res <- tally_runs_groups(50L)
-sum(res$per_hand$n_runs)   # total runs
+sum(res$per_hand$n_runs)   # total runs played
 head(res$heat, 4)
 ```
 
@@ -788,13 +806,15 @@ When launched directly (`Rscript scripts/07_runs_vs_groups.R`), the script
 runs 10,000 random hands, prints a summary to the console and saves the
 results in `results/`:
 
-- `runs_vs_groups_per_hand.csv` — runs and groups per hand.
+- `runs_vs_groups_per_hand.csv` — runs, groups and covered tiles per hand.
 - `runs_vs_groups_summary.csv` — aggregate statistics (relative frequency,
-  mean melds per hand, dominance of each type).
-- `runs_vs_groups_heatmap.csv` — melds by tile number and type
+  mean melds and mean covered tiles per hand, dominance of each type).
+- `runs_vs_groups_heatmap.csv` — played melds by tile number and type
   (total and mean per hand).
-- `runs_vs_groups_distribution.png` — histogram of melds per hand by type.
-- `runs_vs_groups_heatmap.png` — heatmap of melds by tile number and type.
+- `runs_vs_groups_distribution.png` — histogram of played melds per hand by
+  type.
+- `runs_vs_groups_heatmap.png` — heatmap of played melds by tile number and
+  type.
 
 ---
 
@@ -808,8 +828,7 @@ results in `results/`:
 | `03_board_verifier.R` | `board_to_list()`, `board_to_dataframe()`, `check_physical()`, `verify_board()` |
 | `04_board_restructuring.R` | `add_to_meld()`, `move_add_tile()`, `move_swap_joker()`, `move_transfer_tile()`, `move_split_and_add()`, `find_moves()`, `move_descriptions()` |
 | `05_board_visualization.R` | `order_meld()`, `board_to_data()`, `show_board()`, `plot_board()` |
-| `06_opening_analysis.R` | `random_hand()`, `prepare_hand()`, `possible_melds()`, `solve_opening()`, `can_open()`, `max_opening()`, `simulate_draws_until_open()` |
+| `06_opening_analysis.R` | `random_hand()`, `prepare_hand()`, `possible_melds()`, `solve_opening()`, `can_open()`, `max_opening()`, `solve_opening_coverage()`, `simulate_draws_until_open()` |
 | `07_runs_vs_groups.R` | `tally_hand_melds()`, `tally_runs_groups()` |
-| `06_opening_analysis.R` | `random_hand()`, `prepare_hand()`, `possible_melds()`, `solve_opening()`, `can_open()`, `max_opening()`, `simulate_draws_until_open()` |
 
 Rendered from `reports/function_reference.qmd` with Quarto.

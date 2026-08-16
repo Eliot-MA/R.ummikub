@@ -3,21 +3,25 @@
 # Objective 6, analysis B: RUNS vs GROUPS.
 #
 # Questions:
-#   1) What is the relative frequency of runs and groups among the melds
-#      formable in random hands of 14 tiles?
-#   2) Which tile numbers take part in the most melds, and of which type?
-#      (heatmap of melds by tile number)
+#   1) What is the relative frequency of runs and groups in random hands of
+#      14 tiles, considering what can actually be PLAYED?
+#   2) Which tile numbers take part in the most played melds, and of which
+#      type? (heatmap of melds by tile number)
 #
-# Method: Monte Carlo with EXACT enumeration of the melds.
-#   - `tally_hand_melds()`   : for one hand, counts its formable melds by
-#                             type (run / group) and, per tile number, how
-#                             many melds of each type use it.
-#   - `tally_runs_groups()`  : runs the simulation over `n_hands` hands and
-#                             aggregates the tallies.
+# Method: Monte Carlo with EXACT resolution of each hand.
+#   - `coverage_solver()`  : branch & bound (from script 06) that finds the
+#                            combination of DISJOINT melds covering the most
+#                            tiles of the hand.
+#   - `tally_hand_melds()` : tallies that optimal solution by type
+#                            (run / group) and, per tile number, how many
+#                            melds of each type use it.
+#   - `tally_runs_groups()`: runs the simulation over `n_hands` hands and
+#                            aggregates the tallies.
 #
-# The meld type is taken from `possible_melds()` (which tags each meld as
-# "run" or "group"); it cannot be re-derived from the tile matrix alone,
-# because a meld made of a single real tile plus jokers could be either.
+# The tally uses the optimal PLAYABLE combination, not the raw candidate
+# list: overlapping melds (e.g. the sub-runs inside a longer run) can never
+# both appear in a solution, so each tile is counted at most once and a hand
+# of k tiles can never play more than floor(k / 3) melds.
 #
 # Results: saved in `results/` (CSV and PNG) and printed to the console.
 # The execution block only runs when the script is launched directly
@@ -44,21 +48,33 @@ source_local("06_opening_analysis.R")
 
 # --- Per-hand tally ---------------------------------------------------
 
-# Tallies the formable melds of a single prepared hand. Returns a list with:
-#   - `n_runs`   : number of run melds.
-#   - `n_groups` : number of group melds.
-#   - `heat_run`   : integer(13): number of run melds using each tile number.
-#   - `heat_group` : integer(13): number of group melds using each number.
+# Tallies the OPTIMAL DISJOINT solution of a single prepared hand: the
+# combination of melds (branch & bound on coverage) that uses the most
+# tiles. Returns a list with:
+#   - `covered`   : number of tiles covered by the solution.
+#   - `n_runs`    : number of run melds in the solution.
+#   - `n_groups`  : number of group melds in the solution.
+#   - `heat_run`   : integer(13): run melds in the solution using each
+#                    tile number.
+#   - `heat_group` : integer(13): group melds in the solution using each
+#                    tile number.
 tally_hand_melds <- function(prep) {
   types <- prep$types
   melds <- possible_melds(prep)
   if (nrow(melds$M) == 0L) {
-    return(list(n_runs = 0L, n_groups = 0L,
+    return(list(covered = 0L, n_runs = 0L, n_groups = 0L,
                 heat_run = integer(13), heat_group = integer(13)))
   }
-  M <- melds$M
-  is_run <- melds$type == "run"
-  is_group <- melds$type == "group"
+  sol <- coverage_solver(prep, melds)
+  chosen <- sol$idx
+  if (length(chosen) == 0L) {
+    return(list(covered = 0L, n_runs = 0L, n_groups = 0L,
+                heat_run = integer(13), heat_group = integer(13)))
+  }
+  M <- melds$M[chosen, , drop = FALSE]
+  type <- melds$type[chosen]
+  is_run <- type == "run"
+  is_group <- type == "group"
   heat_run <- integer(13)
   heat_group <- integer(13)
   for (n in 1:13) {
@@ -68,7 +84,7 @@ tally_hand_melds <- function(prep) {
     heat_run[n] <- sum(uses & is_run)
     heat_group[n] <- sum(uses & is_group)
   }
-  list(n_runs = sum(is_run), n_groups = sum(is_group),
+  list(covered = sol$covered, n_runs = sum(is_run), n_groups = sum(is_group),
        heat_run = heat_run, heat_group = heat_group)
 }
 
@@ -76,14 +92,16 @@ tally_hand_melds <- function(prep) {
 
 # Runs `n_hands` random hands of `k` tiles and aggregates the tallies.
 # Returns a list with:
-#   - `per_hand`: data.frame (n_runs, n_groups), one row per hand.
+#   - `per_hand`: data.frame (n_runs, n_groups, covered), one row per hand.
 #   - `heat`    : data.frame (number, run, group) with the TOTAL number of
-#                 melds of each type that use each tile number (1..13).
+#                 played melds of each type that use each tile number
+#                 (1..13) across all hands.
 #   - `n_hands`, `k`: parameters used.
 tally_runs_groups <- function(n_hands = 10000L, k = 14L, seed = NULL) {
   if (!is.null(seed)) set.seed(seed)
   n_runs <- integer(n_hands)
   n_groups <- integer(n_hands)
+  covered <- integer(n_hands)
   heat_run <- integer(13)
   heat_group <- integer(13)
   for (s in seq_len(n_hands)) {
@@ -91,11 +109,13 @@ tally_runs_groups <- function(n_hands = 10000L, k = 14L, seed = NULL) {
     t <- tally_hand_melds(prep)
     n_runs[s] <- t$n_runs
     n_groups[s] <- t$n_groups
+    covered[s] <- t$covered
     heat_run <- heat_run + t$heat_run
     heat_group <- heat_group + t$heat_group
   }
   list(
-    per_hand = data.frame(n_runs = n_runs, n_groups = n_groups),
+    per_hand = data.frame(n_runs = n_runs, n_groups = n_groups,
+                          covered = covered),
     heat = data.frame(number = 1:13, run = heat_run, group = heat_group),
     n_hands = n_hands,
     k = k
@@ -135,9 +155,11 @@ if (sys.nframe() == 0L) {
   hands_runs_more <- mean(per_hand$n_runs > per_hand$n_groups)
   hands_groups_more <- mean(per_hand$n_groups > per_hand$n_runs)
   hands_equal <- mean(per_hand$n_runs == per_hand$n_groups)
+  mean_covered <- mean(per_hand$covered)
+  hands_with_meld <- mean(per_hand$covered > 0)
 
-  cat("1) Relative frequency of the two meld types\n")
-  cat("   Total formable melds :", total_melds, "\n")
+  cat("1) Relative frequency of the two types (optimal disjoint play)\n")
+  cat("   Total melds played   :", total_melds, "\n")
   cat(sprintf("   Runs   : %6d (%5.1f%%)   mean %.2f per hand\n",
               total_runs, 100 * p_runs, mean(per_hand$n_runs)))
   cat(sprintf("   Groups : %6d (%5.1f%%)   mean %.2f per hand\n",
@@ -147,7 +169,12 @@ if (sys.nframe() == 0L) {
   cat("\n2) Which type dominates each hand?\n")
   cat(sprintf("   More runs   : %5.1f%%   More groups : %5.1f%%   Equal: %5.1f%%\n",
               100 * hands_runs_more, 100 * hands_groups_more, 100 * hands_equal))
-  cat("\n3) Tile numbers and meld type (heatmap, mean melds per hand)\n")
+  cat("\n3) Coverage\n")
+  cat(sprintf("   Mean tiles covered : %.2f of %d (%.1f%% of the hand)\n",
+              mean_covered, K, 100 * mean_covered / K))
+  cat(sprintf("   Hands with at least one playable meld : %5.1f%%\n",
+              100 * hands_with_meld))
+  cat("\n4) Tile numbers and meld type (heatmap, mean melds per hand)\n")
   top_run <- tail(res$heat[order(res$heat$run), ], 3L)
   top_group <- tail(res$heat[order(res$heat$group), ], 3L)
   cat("   Top numbers for runs  :",
@@ -183,7 +210,10 @@ if (sys.nframe() == 0L) {
     hands_with_group = hands_with_group,
     hands_runs_more = hands_runs_more,
     hands_groups_more = hands_groups_more,
-    hands_equal = hands_equal
+    hands_equal = hands_equal,
+    mean_covered = mean_covered,
+    mean_covered_pct = mean_covered / K,
+    hands_with_meld = hands_with_meld
   )
   write.csv(summary_df, file.path(out_dir, "runs_vs_groups_summary.csv"),
             row.names = FALSE)
@@ -202,8 +232,8 @@ if (sys.nframe() == 0L) {
       ggplot2::scale_fill_manual(values = c(Runs = "#3b6fd4",
                                             Groups = "#d45a3b")) +
       ggplot2::labs(
-        title = "Number of formable melds per hand",
-        subtitle = sprintf("distribution over %d random hands of %d tiles",
+        title = "Number of played melds per hand",
+        subtitle = sprintf("optimal disjoint play over %d random hands of %d tiles",
                            n, 14L),
         x = "melds per hand", y = "hands",
         fill = NULL
@@ -221,8 +251,8 @@ if (sys.nframe() == 0L) {
       ggplot2::scale_fill_viridis_c(option = "magma", end = 0.95) +
       ggplot2::scale_x_continuous(breaks = 1:13) +
       ggplot2::labs(
-        title = "Formable melds by tile number",
-        subtitle = sprintf("mean number of melds per hand that use each number (%d random hands)",
+        title = "Played melds by tile number",
+        subtitle = sprintf("mean number of played melds per hand that use each number (%d random hands)",
                            n),
         x = "tile number", y = NULL,
         fill = "mean melds / hand"

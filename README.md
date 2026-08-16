@@ -45,8 +45,9 @@ strategies of the game.
    - **Opening (30 rule):** probability of being able to open with only the
      14 starting tiles, and the average number of draws needed to open when
      the starting hand does not reach 30.
-   - **Runs vs groups:** in random hands, which type of meld is more likely,
-     and whether middle numbers generate more melds than edge numbers.
+   - **Runs vs groups:** in random hands, which type of meld appears in the
+      optimal play (disjoint melds covering the most tiles), and which tile
+      numbers generate more melds.
    - **Value of drawing:** in which situations drawing is better than waiting
      for a restructuring play, and which tile types unlock the most plays
      (simulations).
@@ -64,7 +65,7 @@ strategies of the game.
 | `scripts/04_board_restructuring.R`      | Objective 4: rearrange existing combos                   |
 | `scripts/05_board_visualization.R`      | Objective 5: board as `data.frame` / plot                |
 | `scripts/06_opening_analysis.R`         | Objective 6: opening analysis (rule of 30, Monte Carlo)  |
-| `scripts/07_runs_vs_groups.R`           | Objective 6: runs vs groups (relative frequency, heatmap) |
+| `scripts/07_runs_vs_groups.R`           | Objective 6: runs vs groups (coverage B&B, relative frequency, heatmap) |
 | `tests/`                                | `testthat` tests (`Rscript -e "testthat::test_file('tests/test_objective_01.R')"`) |
 
 Scripts load the pool from `00_tile_pool.R` via `source()`, so that all of
@@ -102,15 +103,22 @@ them use the same tile representation.
       starting tiles; expected number of draws needed to open when the hand
       cannot reach 30. Implemented and tested (22 tests).
 - [x] **Objective 6, Runs vs groups**: relative frequency of runs and groups
-      in random hands (exact meld enumeration, tagged by type); heatmap of
-      melds by tile number. Implemented and tested (26 tests).
+      in the optimal play of random hands (coverage branch & bound over
+      disjoint melds); heatmap of played melds by tile number. Implemented
+      and tested (31 tests).
 - [ ] **Objective 6, Value of drawing**: when drawing beats waiting for a
       restructuring play; which tile types unlock the most plays.
 
 Tools (objectives 1-5) are implemented and tested (**133 tests passing**),
-and the two analyses of objective 6 add 48 more (**181 tests passing in
+and the two analyses of objective 6 add 53 more (**186 tests passing in
 total**). The remaining game-analysis phase (value of drawing) is planned.
 
 ## Open questions / to decide
 
 - Any specific rules variant?
+
+## AI assistance
+
+This project was developed interactively using opencode (Claude big-pickle).
+The AI helped with code design, implementation, tests, analysis, and
+documentation. All final decisions and validation are the author's responsibility.

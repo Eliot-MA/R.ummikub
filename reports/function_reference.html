@@ -3554,6 +3554,7 @@ window.onload = function() {
   <li><a href="#solve_openinghand-target" id="toc-solve_openinghand-target" class="nav-link" data-scroll-target="#solve_openinghand-target"><code>solve_opening(hand, target)</code></a></li>
   <li><a href="#can_openhand" id="toc-can_openhand" class="nav-link" data-scroll-target="#can_openhand"><code>can_open(hand)</code></a></li>
   <li><a href="#max_openinghand" id="toc-max_openinghand" class="nav-link" data-scroll-target="#max_openinghand"><code>max_opening(hand)</code></a></li>
+  <li><a href="#solve_opening_coveragehand" id="toc-solve_opening_coveragehand" class="nav-link" data-scroll-target="#solve_opening_coveragehand"><code>solve_opening_coverage(hand)</code></a></li>
   <li><a href="#simulate_draws_until_open" id="toc-simulate_draws_until_open" class="nav-link" data-scroll-target="#simulate_draws_until_open"><code>simulate_draws_until_open()</code></a></li>
   <li><a href="#running-the-analysis" id="toc-running-the-analysis" class="nav-link" data-scroll-target="#running-the-analysis">Running the analysis</a></li>
   </ul></li>
@@ -4434,7 +4435,7 @@ Meld 2 (group): 7 blue | 7 yellow | 7 black</code></pre>
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["number"],"name":[1],"type":["int"],"align":["right"]},{"label":["colour"],"name":[2],"type":["fct"],"align":["left"]}],"data":[{"1":"5","2":"red","_rn_":"10"},{"1":"2","2":"yellow","_rn_":"55"},{"1":"5","2":"blue","_rn_":"36"},{"1":"5","2":"black","_rn_":"88"},{"1":"3","2":"yellow","_rn_":"57"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["number"],"name":[1],"type":["int"],"align":["right"]},{"label":["colour"],"name":[2],"type":["fct"],"align":["left"]}],"data":[{"1":"8","2":"blue","_rn_":"41"},{"1":"7","2":"red","_rn_":"14"},{"1":"13","2":"blue","_rn_":"52"},{"1":"9","2":"yellow","_rn_":"70"},{"1":"12","2":"black","_rn_":"101"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -4530,6 +4531,22 @@ Meld 2 (group): 7 blue | 7 yellow | 7 black</code></pre>
 </div>
 </div>
 </section>
+<section id="solve_opening_coveragehand" class="level2">
+<h2 class="anchored" data-anchor-id="solve_opening_coveragehand"><code>solve_opening_coverage(hand)</code></h2>
+<p>Maximum number of tiles coverable with <strong>disjoint</strong> melds of the hand (coverage version of <code>solve_opening()</code>). Used by analysis B to decide which melds can actually be played together.</p>
+<ul>
+<li><strong>Arguments:</strong> <code>hand</code>.</li>
+<li><strong>Value:</strong> an integer (0 if no meld can be formed).</li>
+</ul>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb101"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a><span class="fu">solve_opening_coverage</span>(<span class="fu">tiles</span>(<span class="fu">c</span>(<span class="dv">3</span>, <span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>, <span class="dv">3</span>, <span class="dv">3</span>),</span>
+<span id="cb101-2"><a href="#cb101-2" aria-hidden="true" tabindex="-1"></a>                             <span class="fu">c</span>(<span class="st">&quot;red&quot;</span>, <span class="st">&quot;red&quot;</span>, <span class="st">&quot;red&quot;</span>, <span class="st">&quot;red&quot;</span>, <span class="st">&quot;blue&quot;</span>, <span class="st">&quot;black&quot;</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 6</code></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb103"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb103-1"><a href="#cb103-1" aria-hidden="true" tabindex="-1"></a><span class="co"># run 4-5-6 + group of 3s cover 6 tiles (more than the run 3-4-5-6 alone)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
 <section id="simulate_draws_until_open" class="level2">
 <h2 class="anchored" data-anchor-id="simulate_draws_until_open"><code>simulate_draws_until_open()</code></h2>
 <p>Draws tiles one at a time from the pool until the hand can open.</p>
@@ -4538,8 +4555,8 @@ Meld 2 (group): 7 blue | 7 yellow | 7 black</code></pre>
 <li><strong>Value:</strong> the number of draws needed (0 if the 14 initial tiles already open).</li>
 </ul>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb101"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1</span>)</span>
-<span id="cb101-2"><a href="#cb101-2" aria-hidden="true" tabindex="-1"></a><span class="fu">simulate_draws_until_open</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb104"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb104-1"><a href="#cb104-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1</span>)</span>
+<span id="cb104-2"><a href="#cb104-2" aria-hidden="true" tabindex="-1"></a><span class="fu">simulate_draws_until_open</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 9</code></pre>
 </div>
@@ -4563,19 +4580,22 @@ Meld 2 (group): 7 blue | 7 yellow | 7 black</code></pre>
 <section id="script-07-runs-vs-groups-scripts07_runs_vs_groups.r" class="level1">
 <h1>Script 07 — Runs vs groups (<code>scripts/07_runs_vs_groups.R</code>)</h1>
 <p><em>Objective 6, analysis B: relative frequency of runs and groups in random hands, and a heatmap of melds by tile number.</em></p>
-<p>The melds are enumerated <strong>exactly</strong> with <code>possible_melds()</code> from script 06, which tags each meld as <code>&quot;run&quot;</code> or <code>&quot;group&quot;</code>. This type cannot be re-derived from the tile matrix alone, because a meld made of a single real tile plus jokers could be either.</p>
+<p>The tally uses the <strong>optimal playable combination</strong> of each hand, not the raw candidate list: <code>coverage_solver()</code> (from script 06) runs a branch &amp; bound that maximizes the number of tiles covered with <strong>disjoint</strong> melds. Overlapping melds (e.g. the sub-runs inside a longer run) can never both appear in a solution, so a hand of <code>k</code> tiles never plays more than <code>floor(k / 3)</code> melds and each tile is counted at most once.</p>
 <section id="tally_hand_meldsprep" class="level2">
 <h2 class="anchored" data-anchor-id="tally_hand_meldsprep"><code>tally_hand_melds(prep)</code></h2>
-<p>Counts, for one prepared hand, the formable melds by type and by tile number.</p>
+<p>Tallies the optimal disjoint play of one prepared hand.</p>
 <ul>
 <li><strong>Arguments:</strong> <code>prep</code>: the output of <code>prepare_hand()</code>.</li>
-<li><strong>Value:</strong> a list with <code>n_runs</code>, <code>n_groups</code> and the heat vectors <code>heat_run</code> / <code>heat_group</code> (integer(13): number of melds of each type that use each tile number).</li>
+<li><strong>Value:</strong> a list with <code>covered</code> (tiles used), <code>n_runs</code>, <code>n_groups</code> and the heat vectors <code>heat_run</code> / <code>heat_group</code> (integer(13): number of played melds of each type that use each tile number).</li>
 </ul>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb103"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb103-1"><a href="#cb103-1" aria-hidden="true" tabindex="-1"></a><span class="fu">tally_hand_melds</span>(<span class="fu">prepare_hand</span>(<span class="fu">tiles</span>(<span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>, <span class="dv">6</span>, <span class="dv">6</span>),</span>
-<span id="cb103-2"><a href="#cb103-2" aria-hidden="true" tabindex="-1"></a>                                    <span class="fu">c</span>(<span class="st">&quot;red&quot;</span>, <span class="st">&quot;red&quot;</span>, <span class="st">&quot;red&quot;</span>, <span class="st">&quot;yellow&quot;</span>, <span class="st">&quot;black&quot;</span>))))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb106"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb106-1"><a href="#cb106-1" aria-hidden="true" tabindex="-1"></a><span class="fu">tally_hand_melds</span>(<span class="fu">prepare_hand</span>(<span class="fu">tiles</span>(<span class="fu">c</span>(<span class="dv">3</span>, <span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>, <span class="dv">3</span>, <span class="dv">3</span>),</span>
+<span id="cb106-2"><a href="#cb106-2" aria-hidden="true" tabindex="-1"></a>                                    <span class="fu">c</span>(<span class="st">&quot;red&quot;</span>, <span class="st">&quot;red&quot;</span>, <span class="st">&quot;red&quot;</span>, <span class="st">&quot;red&quot;</span>, <span class="st">&quot;blue&quot;</span>, <span class="st">&quot;black&quot;</span>))))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>$n_runs
+<pre><code>$covered
+[1] 6
+
+$n_runs
 [1] 1
 
 $n_groups
@@ -4585,7 +4605,7 @@ $heat_run
  [1] 0 0 0 1 1 1 0 0 0 0 0 0 0
 
 $heat_group
- [1] 0 0 0 0 0 1 0 0 0 0 0 0 0</code></pre>
+ [1] 0 0 1 0 0 0 0 0 0 0 0 0 0</code></pre>
 </div>
 </div>
 </section>
@@ -4596,23 +4616,23 @@ $heat_group
 <li><strong>Arguments:</strong> <code>n_hands</code>: number of hands (default 10000); <code>k</code>: tiles per hand (default 14); <code>seed</code>: optional seed for reproducibility.</li>
 <li><strong>Value:</strong> a list with:
 <ul>
-<li><code>per_hand</code>: <code>data.frame(n_runs, n_groups)</code> with one row per hand;</li>
-<li><code>heat</code>: <code>data.frame(number, run, group)</code> with the total number of melds of each type that use each tile number (1 to 13);</li>
+<li><code>per_hand</code>: <code>data.frame(n_runs, n_groups, covered)</code> with one row per hand;</li>
+<li><code>heat</code>: <code>data.frame(number, run, group)</code> with the total number of played melds of each type that use each tile number (1 to 13);</li>
 <li><code>n_hands</code>, <code>k</code>: the parameters used.</li>
 </ul></li>
 </ul>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb105"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb105-1"><a href="#cb105-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1</span>)</span>
-<span id="cb105-2"><a href="#cb105-2" aria-hidden="true" tabindex="-1"></a>res <span class="ot">&lt;-</span> <span class="fu">tally_runs_groups</span>(<span class="dv">50</span>L)</span>
-<span id="cb105-3"><a href="#cb105-3" aria-hidden="true" tabindex="-1"></a><span class="fu">sum</span>(res<span class="sc">$</span>per_hand<span class="sc">$</span>n_runs)   <span class="co"># total runs</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb108"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb108-1"><a href="#cb108-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1</span>)</span>
+<span id="cb108-2"><a href="#cb108-2" aria-hidden="true" tabindex="-1"></a>res <span class="ot">&lt;-</span> <span class="fu">tally_runs_groups</span>(<span class="dv">50</span>L)</span>
+<span id="cb108-3"><a href="#cb108-3" aria-hidden="true" tabindex="-1"></a><span class="fu">sum</span>(res<span class="sc">$</span>per_hand<span class="sc">$</span>n_runs)   <span class="co"># total runs played</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 142</code></pre>
+<pre><code>[1] 38</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb107"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb107-1"><a href="#cb107-1" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(res<span class="sc">$</span>heat, <span class="dv">4</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb110"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb110-1"><a href="#cb110-1" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(res<span class="sc">$</span>heat, <span class="dv">4</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["number"],"name":[1],"type":["int"],"align":["right"]},{"label":["run"],"name":[2],"type":["int"],"align":["right"]},{"label":["group"],"name":[3],"type":["int"],"align":["right"]}],"data":[{"1":"1","2":"8","3":"2","_rn_":"1"},{"1":"2","2":"12","3":"3","_rn_":"2"},{"1":"3","2":"32","3":"7","_rn_":"3"},{"1":"4","2":"42","3":"4","_rn_":"4"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["number"],"name":[1],"type":["int"],"align":["right"]},{"label":["run"],"name":[2],"type":["int"],"align":["right"]},{"label":["group"],"name":[3],"type":["int"],"align":["right"]}],"data":[{"1":"1","2":"2","3":"1","_rn_":"1"},{"1":"2","2":"4","3":"1","_rn_":"2"},{"1":"3","2":"7","3":"3","_rn_":"3"},{"1":"4","2":"13","3":"3","_rn_":"4"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -4622,11 +4642,11 @@ $heat_group
 <h2 class="anchored" data-anchor-id="running-the-analysis-1">Running the analysis</h2>
 <p>When launched directly (<code>Rscript scripts/07_runs_vs_groups.R</code>), the script runs 10,000 random hands, prints a summary to the console and saves the results in <code>results/</code>:</p>
 <ul>
-<li><code>runs_vs_groups_per_hand.csv</code> — runs and groups per hand.</li>
-<li><code>runs_vs_groups_summary.csv</code> — aggregate statistics (relative frequency, mean melds per hand, dominance of each type).</li>
-<li><code>runs_vs_groups_heatmap.csv</code> — melds by tile number and type (total and mean per hand).</li>
-<li><code>runs_vs_groups_distribution.png</code> — histogram of melds per hand by type.</li>
-<li><code>runs_vs_groups_heatmap.png</code> — heatmap of melds by tile number and type.</li>
+<li><code>runs_vs_groups_per_hand.csv</code> — runs, groups and covered tiles per hand.</li>
+<li><code>runs_vs_groups_summary.csv</code> — aggregate statistics (relative frequency, mean melds and mean covered tiles per hand, dominance of each type).</li>
+<li><code>runs_vs_groups_heatmap.csv</code> — played melds by tile number and type (total and mean per hand).</li>
+<li><code>runs_vs_groups_distribution.png</code> — histogram of played melds per hand by type.</li>
+<li><code>runs_vs_groups_heatmap.png</code> — heatmap of played melds by tile number and type.</li>
 </ul>
 <hr>
 </section>
@@ -4671,15 +4691,11 @@ $heat_group
 </tr>
 <tr class="odd">
 <td><code>06_opening_analysis.R</code></td>
-<td><code>random_hand()</code>, <code>prepare_hand()</code>, <code>possible_melds()</code>, <code>solve_opening()</code>, <code>can_open()</code>, <code>max_opening()</code>, <code>simulate_draws_until_open()</code></td>
+<td><code>random_hand()</code>, <code>prepare_hand()</code>, <code>possible_melds()</code>, <code>solve_opening()</code>, <code>can_open()</code>, <code>max_opening()</code>, <code>solve_opening_coverage()</code>, <code>simulate_draws_until_open()</code></td>
 </tr>
 <tr class="even">
 <td><code>07_runs_vs_groups.R</code></td>
 <td><code>tally_hand_melds()</code>, <code>tally_runs_groups()</code></td>
-</tr>
-<tr class="odd">
-<td><code>06_opening_analysis.R</code></td>
-<td><code>random_hand()</code>, <code>prepare_hand()</code>, <code>possible_melds()</code>, <code>solve_opening()</code>, <code>can_open()</code>, <code>max_opening()</code>, <code>simulate_draws_until_open()</code></td>
 </tr>
 </tbody>
 </table>

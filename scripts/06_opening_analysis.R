@@ -16,6 +16,8 @@
 #                             (exact branch & bound). With `target = 30` it
 #                             cuts off as soon as it is reached.
 #   - `can_open()` / `max_opening()`: convenient wrappers.
+#   - `solve_opening_coverage()`: maximum tiles coverable with DISJOINT
+#                             melds (coverage version of the search).
 #   - `random_hand()`       : 14 random tiles from the pool (no replacement).
 #   - `simulate_draws_until_open()`: draw after draw until able to open.
 #
@@ -233,6 +235,75 @@ can_open <- function(hand) {
 # Exact maximum opening score (for the distribution).
 max_opening <- function(hand) {
   solve_opening(hand, target = Inf)
+}
+
+# --- Coverage version (used by analysis B) -----------------------------
+
+# Maximum number of tiles coverable with DISJOINT melds (coverage version
+# of solve_opening's search). `prep` and `melds` come from prepare_hand()
+# and possible_melds(). Returns a list with:
+#   - `covered`: number of tiles of the hand used by the best solution.
+#   - `idx`    : row indices (into `melds$M`) of the chosen melds.
+# Intermediate runs remain in the candidate list but can never both appear
+# in a solution (they overlap), so the best play is always found.
+coverage_solver <- function(prep, melds) {
+  types <- prep$types
+  m <- nrow(types)
+  M <- melds$M
+  if (nrow(M) == 0L) return(list(covered = 0L, idx = integer(0)))
+  n_tiles <- rowSums(M)
+  best <- 0L
+  best_idx <- integer(0)
+
+  branch <- function(remaining, acc, chosen) {
+    # Optimistic bound: every remaining tile could still be covered.
+    if (acc + sum(remaining) <= best) return(invisible(FALSE))
+
+    # Usable melds (multiset included in what is left).
+    cmp <- M <= rep(remaining, each = nrow(M))
+    usable <- rowSums(cmp) == m
+    if (!any(usable)) {
+      if (acc > best) {
+        best <<- acc
+        best_idx <<- chosen
+      }
+      return(invisible(FALSE))
+    }
+
+    # Most constrained tile: the one covered by the fewest usable melds.
+    cov <- colSums(M[usable, , drop = FALSE] > 0)
+    cand <- which(remaining > 0 & cov > 0)
+    if (length(cand) == 0L) {
+      if (acc > best) {
+        best <<- acc
+        best_idx <<- chosen
+      }
+      return(invisible(FALSE))
+    }
+    tile_idx <- cand[which.min(cov[cand])]
+
+    # Branch 1: do not use that tile in any meld.
+    remaining2 <- remaining
+    remaining2[tile_idx] <- 0L
+    branch(remaining2, acc, chosen)
+
+    # Branch 2: use it in each meld that contains it (best first).
+    js <- which(usable & M[, tile_idx] > 0)
+    js <- js[order(n_tiles[js], decreasing = TRUE)]
+    for (j in js) {
+      branch(remaining - M[j, ], acc + n_tiles[j], c(chosen, j))
+    }
+    invisible(FALSE)
+  }
+
+  branch(types$n, 0L, integer(0))
+  list(covered = best, idx = best_idx)
+}
+
+# Maximum number of tiles coverable with disjoint melds of the hand.
+solve_opening_coverage <- function(hand) {
+  prep <- prepare_hand(hand)
+  coverage_solver(prep, possible_melds(prep))$covered
 }
 
 # --- Draw simulation --------------------------------------------------
