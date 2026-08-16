@@ -99,14 +99,14 @@ them use the same tile representation.
       Implemented and tested (17 tests).
 - [x] **Objective 6, Opening**: probability of opening with only the 14
       starting tiles; expected number of draws needed to open when the hand
-      cannot reach 30. Implemented and tested (18 tests).
+      cannot reach 30. Implemented and tested (22 tests).
 - [ ] **Objective 6, Runs vs groups**: relative frequency of runs and groups
       in random hands; heatmap of melds by tile number.
 - [ ] **Objective 6, Value of drawing**: when drawing beats waiting for a
       restructuring play; which tile types unlock the most plays.
 
 Tools (objectives 1-5) are implemented and tested (**133 tests passing**),
-and the opening analysis (objective 6) adds 18 more (**151 tests passing
+and the opening analysis (objective 6) adds 22 more (**155 tests passing
 in total**). The remaining game-analysis phases (runs vs groups, value of
 drawing) are planned.
 
