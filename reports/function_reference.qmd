@@ -45,6 +45,7 @@ melds, or a single `data.frame` with an extra `meld_id` column.
 | `scripts/05_board_visualization.R`| 5: board as `data.frame` / plot                        |
 | `scripts/06_opening_analysis.R`   | 6 (analysis A): opening analysis (rule of 30, Monte Carlo)          |
 | `scripts/07_runs_vs_groups.R`     | 6 (analysis B): runs vs groups (relative frequency, heatmap)        |
+| `scripts/08_play_or_draw.R`       | 6 (analysis C): play or draw (exact value function, phase 1)       |
 | `reports/function_reference.qmd`  | This document                                          |
 
 ## Setup
@@ -61,6 +62,7 @@ source("../scripts/04_board_restructuring.R")
 source("../scripts/05_board_visualization.R")
 source("../scripts/06_opening_analysis.R")
 source("../scripts/07_runs_vs_groups.R")
+source("../scripts/08_play_or_draw.R")
 ```
 
 ::: {.callout-note}
@@ -818,6 +820,119 @@ results in `results/`:
 
 ---
 
+# Script 08 — Play or draw (`scripts/08_play_or_draw.R`)
+
+*Objective 6, analysis C: play or draw. Phase 1, the exact value function.*
+
+The value of a hand, $V(H)$, is the maximum total value meldeable from it as
+disjoint melds. It is the inner quantity that every later phase of the
+play-or-draw decision needs, both for the hand in front of us and for the
+sampled opponent hands.
+
+It is computed with the dynamic program of van Rijn, Takes and Vis (2016),
+[*The Complexity of Rummikub Problems*](https://arxiv.org/abs/1604.07553).
+The program sweeps the tile values
+1 to 13 once, left to right, remembering only the length of the runs in
+progress, capped at 3 because a run that is already legal adds only its own
+value for every further tile. Whatever the runs do not use is left to the
+groups, which are single-value and are therefore decided exactly and
+independently at each value.
+
+The design log for this analysis, with the decisions, the rejected
+alternatives and the open questions, is `reports/play_or_draw.qmd`.
+
+## The pieces
+
+```{r pieces, message = FALSE, warning = FALSE}
+# The hand as a 13 x 4 count matrix, indexed by [number, colour].
+hand_matrix(tiles(c(3, 4, 5), rep("blue", 3)))
+
+# Exact maximum group coverage of the leftovers of ONE tile value, where
+# each colour has 0, 1 or 2 copies left. The take-four-first greedy gives 4
+# here; two groups of three cover all 6.
+total_group_size(c(2L, 2L, 1L, 1L))
+
+# All the ways one colour can use its copies of a single value, given the
+# run lengths it currently has in progress.
+colour_run_options(c(2L, 1L), 1L, 6L)
+```
+
+## The value function
+
+```{r value, message = FALSE, warning = FALSE}
+# A run of three, and a run of five: the longer one is not a run of three
+# plus leftovers, it is 12 at value 5 and then 6 and 7 on top.
+best_meld_value(tiles(c(3, 4, 5), rep("red", 3)))
+best_meld_value(tiles(c(3, 4, 5, 6, 7), rep("red", 5)))
+
+# A group of four, and a run beside a group.
+best_meld_value(tiles(rep(7, 4), c("red", "blue", "yellow", "black")))
+best_meld_value(tiles(c(1, 1, 1, 2, 3, 4),
+                      c("red", "blue", "yellow", "red", "red", "red")))
+
+# 0 when no meld fits.
+best_meld_value(tiles(c(5, 6), c("red", "red")))
+```
+
+## Coverage instead of value
+
+The same program with a flat reward maximises the number of melded tiles,
+which is the objective of analysis B and so gives a second, independent
+check against `coverage_solver()`.
+
+```{r coverage, message = FALSE, warning = FALSE}
+# A group of three 1s and a run 5-6-7: by value the run wins, by coverage
+# the group does, because both cover three tiles.
+hand <- tiles(c(1, 1, 1, 5, 6, 7), c("red", "blue", "yellow", "red", "red", "red"))
+best_meld_value(hand)
+best_meld_coverage(hand)
+```
+
+## Agreement with the branch & bound
+
+`max_opening()` from script 06 solves the same problem by a different route,
+with a different representation, a different bound and a different search
+order, so agreement is meaningful evidence that the dynamic program is exact.
+
+```{r verify, message = FALSE, warning = FALSE}
+verify_against_bnb(n = 10L, k = 8L, seed = 20260820)
+```
+
+## Deliberate limits
+
+Phase 1 raises an error rather than guessing. Jokers are not supported until
+phase 1b, because a joker is a choice of tile to be made under the same
+constraints, and that is a new dimension, not an extension of this one. A
+hand holding more copies of a tile than the pool contains has no answer
+either.
+
+```{r limits, message = FALSE, warning = FALSE}
+joker <- tiles(c(5, 5, 5, 7), c("red", "blue", "yellow", "black"))
+joker$number[4] <- NA
+try(best_meld_value(joker))
+
+try(best_meld_value(tiles(rep(1, 5), rep("red", 5))))
+```
+
+## On cost
+
+The dynamic program is exact but, at this state space, slower than the
+branch \& bound it is checked against: the state that has to be remembered is
+the product of the four per-colour run states, $10^4$ per value, not one
+colour's vector of 10. On 14-tile hands one solve costs seconds. Phases 2 to
+5 therefore use `max_opening()` as the fast exact scorer, and keep this
+program as the reference definition of $V$ and as the oracle of the tests.
+See decisions D6 and D7 in `reports/play_or_draw.qmd`.
+
+## Running the analysis
+
+When launched directly (`Rscript scripts/08_play_or_draw.R`), the script
+verifies the program against the branch \& bound and against
+`coverage_solver()`, then measures the cost of one exact solve by hand size,
+and saves the measurements in `results/phase1_solve_cost.csv`.
+
+---
+
 # Summary table
 
 | Script | Key functions |
@@ -830,5 +945,6 @@ results in `results/`:
 | `05_board_visualization.R` | `order_meld()`, `board_to_data()`, `show_board()`, `plot_board()` |
 | `06_opening_analysis.R` | `random_hand()`, `prepare_hand()`, `possible_melds()`, `solve_opening()`, `can_open()`, `max_opening()`, `solve_opening_coverage()`, `simulate_draws_until_open()` |
 | `07_runs_vs_groups.R` | `tally_hand_melds()`, `tally_runs_groups()` |
+| `08_play_or_draw.R` | `hand_matrix()`, `total_group_size()`, `colour_run_options()`, `run_states()`, `value_tables()`, `best_meld_value()`, `best_meld_coverage()`, `random_real_hand()`, `verify_against_bnb()` |
 
 Rendered from `reports/function_reference.qmd` with Quarto.

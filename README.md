@@ -73,6 +73,8 @@ strategies of the game.
 | `scripts/05_board_visualization.R`      | Objective 5: board as `data.frame` / plot                |
 | `scripts/06_opening_analysis.R`         | Objective 6: opening analysis (rule of 30, Monte Carlo)  |
 | `scripts/07_runs_vs_groups.R`           | Objective 6: runs vs groups (coverage B&B, relative frequency, heatmap) |
+| `scripts/08_play_or_draw.R`             | Objective 6: play or draw (exact value function as a dynamic program) |
+| `reports/play_or_draw.qmd`              | Design log for play or draw: decisions, phases, open questions |
 | `tests/`                                | `testthat` tests (`Rscript -e "testthat::test_file('tests/test_objective_01.R')"`) |
 
 Scripts load the pool from `00_tile_pool.R` via `source()`, so that all of
@@ -115,12 +117,28 @@ them use the same tile representation.
       and tested (31 tests).
 - [ ] **Objective 6, Play or draw**: a *play vs draw* decision rule for a
   given hand / board / pool, built on the exact expected gain of a drawn
-  tile (polynomial-time best-meld solver as the value function); which tile
-  types unlock the most plays; the point threshold at which the answer flips.
+  tile; which tile types unlock the most plays; the point threshold at which
+  the answer flips.
+  - [x] **Phase 1**: the value function `V(H)`, as an exact dynamic program
+        following van Rijn, Takes and Vis (2016), arXiv:1604.07553.
+        Implemented in `scripts/08_play_or_draw.R`, which adds 172
+        expectations in `tests/test_objective_08.R`. Validated against
+        `max_opening()` on 360 random hands and against `solve_opening_coverage()`
+        in its coverage form, with no disagreement.
+  - [ ] **Phase 1b**: jokers inside `V`. Phase 1 rejects them on purpose.
+  - [ ] **Phases 2-5**: draw value, exposure, the decision rule, simulation.
+
+**Note on phase 1.** The dynamic program is exact but turned out to be two
+to three orders of magnitude *slower* than the existing branch & bound, so
+phases 2 to 5 will use `max_opening()` as the fast exact scorer and keep the
+dynamic program as the reference definition of `V` and as the test oracle.
+The reason is that the state that has to be remembered is the product of the
+per-colour run states, not one colour's vector. Both the measurement and the
+reasoning are recorded in `reports/play_or_draw.qmd`, decisions D6 and D7.
 
 Tools (objectives 1-5) are implemented and tested (**133 tests passing**),
-and the two analyses of objective 6 add 53 more (**186 tests passing in
-total**). The remaining game-analysis phase (play or draw) is planned.
+and the three analyses of objective 6 add 225 more (**358 tests passing in
+total**).
 
 ## Open questions / to decide
 

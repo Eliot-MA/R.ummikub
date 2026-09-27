@@ -1,0 +1,374 @@
+---
+title: "Play or Draw"
+subtitle: "A design log for the exact play-or-draw analysis"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    theme: cosmo
+    code-fold: false
+    self-contained: true
+    lightbox: true
+bibliography: ../bib/bibliography.bib
+---
+
+> **This is a working document, not a finished report.** It is the memory of
+> the analysis: what was decided, why, what was rejected, and what is still
+> open. It is updated at the end of every phase, so a reader can always tell
+> what the code currently does and why. Conclusions that rest on measurement
+> carry the measurement with them, and conclusions that turned out to be
+> wrong are kept and marked, because the wrong turns are the informative
+> part.
+
+# The question
+
+At my turn, holding hand $H$, seeing board $B$, with pool $P$ to draw from:
+should I lay down a meld, or draw a tile?
+
+Both answers need the same inner quantity, the exact value of a hand:
+
+$$V(H) = \max\{\text{total value meldeable from } H \text{ as disjoint melds}\}$$
+
+Drawing is worth it when the tile improves the hand more than the meld I
+give up is worth to whoever is waiting. Laying down is worth it when the
+opponent's hand cannot exploit what I leave. So the whole analysis reduces
+to computing $V$ exactly and often, which is what phase 1 is about.
+
+The exact inner solver follows the dynamic program of van Rijn, Takes and
+Vis (2016) [@vanrijn2016].
+
+# Decisions
+
+Each decision is recorded with its reasoning, so that a later reader can
+tell a choice from an accident. "Status" says whether the decision still
+holds.
+
+## D1. Solve the inner problem exactly, never approximately
+
+**Decision.** The value of a hand is computed exactly. No greedy, no
+heuristic bound, no sampling of melds.
+
+**Why.** The outer decision compares $V$ on both sides of a single tile.
+An approximation with a bias of a few points does not survive being
+subtracted from itself, and it cannot be validated by inspection: a wrong
+$V$ produces a policy that looks reasonable and plays badly. Exactness here
+is what makes the analysis falsifiable at all.
+
+**Rejected.** A weighted meld heuristic such as "always play the longest
+run". It is cheap, and for the pure value question it is often close, but
+"often close" is not a bound, and the play-or-draw comparison is exactly
+the situation where a small systematic bias decides the outcome.
+
+**Status.** Holds.
+
+## D2. Phase 1 refuses jokers instead of approximating them
+
+**Decision.** `best_meld_value()` raises an error when the hand contains a
+joker. Jokers arrive in phase 1b.
+
+**Why.** A joker can stand in for any tile, so it interacts with runs and
+groups in ways that are not a small extension: a joker can extend a run, or
+be the fourth tile of a group, and which choice is best depends on the rest
+of the hand. Handling it approximately would mean the exact and the
+approximate solver disagree on the one class of hand where the draw
+decision is most interesting, a big joker in hand. Failing loudly keeps
+the exactness claim of D1 honest, and the test suite pins the behaviour so
+the limitation cannot be forgotten.
+
+**Status.** Holds. Scheduled as phase 1b.
+
+## D3. Group coverage is computed exactly, not greedily
+
+**Decision.** `total_group_size()` enumerates the first group of an optimal
+solution and recurses on the remainder.
+
+**Why.** The obvious greedy, take as many distinct colours as possible and
+prefer four, is wrong. With leftovers $(2,2,1,1)$ it takes one group of
+four and stops, covering 4 tiles, while two groups of three cover all 6.
+Because every tile in a group of value $v$ is worth exactly $v$, coverage
+*is* the score for the value question, so a wrong helper is not a slow
+answer but a wrong one. The recursion is tiny: at most 8 tiles and 4
+colours, so at most two levels.
+
+**Cost of the mistake.** This was found during phase 1 by a test, not by
+reading. The execution block reports that the greedy is wrong on 6 of the
+$81$ leftover vectors. It is recorded here because "obviously correct small
+optimisation" was exactly the wrong instinct.
+
+**Status.** Holds. Regression test over all $3^4 = 81$ leftover vectors.
+
+## D4. Runs of length more than three need no separate state
+
+**Decision.** A run length is capped at 3 in the state.
+
+**Why.** From van Rijn et al. [@vanrijn2016]. Once a run is legal, every
+further tile of the same colour adds only its own value, so lengths 4, 5, 6
+and beyond are behaviourally identical and can share one state. This is
+what makes the state space finite, and with two copies per tile it gives 10
+run states per colour: every non-decreasing pair from $\{0,1,2,3\}$.
+
+**Consequence that is easy to get wrong.** The length is capped, but the
+*scoring* must not be. A run that reaches length 3 at value $v$ is credited
+in full, $(v-2) + (v-1) + v$, and a run that is already legal and continues
+is credited only $v$. A 3-4-5-6 run of one colour is therefore 12 at value 5
+plus 6 at value 6, which is 18, and not 15. This is pinned by a test.
+
+**Status.** Holds.
+
+## D5. The state is a plain integer, and the joint option list is precomputed
+
+**Decision.** The run state is encoded as a single integer in base 10, one
+digit per colour, so the memo is a flat numeric vector. Run states,
+transitions and group sizes are tabulated once per (copies, reward) pair and
+cached.
+
+**Why.** The first working version kept the state as a list of vectors and
+keyed the memo on a pasted string. It was correct and roughly ten times
+slower. In R, the cost of a dynamic program is dominated by how cheap it is
+to address a state, not by how many states there are.
+
+**Two subtleties that cost real time.**
+
+- The base-3 code of the leftovers must be the leftovers, `avail - used`,
+  not the tiles the runs took. Indexing the group table with the latter
+  silently scores the wrong hand.
+- Only colours holding a tile of the current value can do anything; for the
+  others the only option is the identity, which also resets their runs.
+  Interpolating a fixed-width leftover vector over all colours, rather than
+  over the active ones, produces negative leftovers and a wrong answer.
+
+**Status.** Holds.
+
+## D6. The state space is the product over colours, so the paper's bound understates it
+
+**Decision.** Treat $f(m)^k$ as the size of the run state, not $f(m)$.
+
+**Why.** van Rijn et al. [@vanrijn2016] give time $O(n \cdot k \cdot f(m))$
+with $f(m) = \binom{m+3}{3}$, which for two copies and four colours reads as
+roughly $13 \cdot 4 \cdot 10 \approx 520$. But the state that has to be
+remembered is not one colour's run vector, it is the tuple of all four: runs
+of different colours are independent, so nothing summarises them jointly, and
+the groups, which mix colours, are decided per value. That tuple has
+$10^4 = 10000$ states per value, and the branch factor at a value where all
+four colours are present is $3^4 = 81$.
+
+The algorithm is still polynomial and still the right idea, and the paper's
+insight about capping run lengths is what keeps the exponent fixed. But the
+stated constant is optimistic by about four orders of magnitude, and the
+difference matters when one is choosing an implementation.
+
+**Status.** Holds. A test asserts $f(2) = 10$ and $f(2)^4 = 10000$ so the
+distinction cannot be quietly lost.
+
+## D7. The production scorer is the branch & bound, not the dynamic program
+
+**Decision.** Phases 2 to 5 call `max_opening()` from
+`scripts/06_opening_analysis.R`. `best_meld_value()` remains the reference
+definition of $V$ and the oracle of the test suite.
+
+**Why.** Measured on random hands, 25 hands of each size, one call of each
+solver on each (the table is written to `results/phase1_solve_cost.csv`):
+
+| $k$ | dynamic program | branch \& bound | ratio |
+|---:|---:|---:|---:|
+| 4 | 18 ms | 0.4 ms | 45x |
+| 6 | 67 ms | 1.2 ms | 55x |
+| 8 | 189 ms | 1.2 ms | 155x |
+| 10 | 683 ms | 1.2 ms | 570x |
+| 12 | 2714 ms | 0.8 ms | 3400x |
+| 14 | 11658 ms | 2.0 ms | 5800x |
+
+The dynamic program is exact but explores the $10000$-state-per-value space
+that D6 describes, and at $k = 14$ a single solve costs twelve seconds. The
+branch \& bound is also exact, and the two agree on every hand tested, so
+using it does not weaken D1: it inherits the correctness of the slow one.
+The outer problem needs hundreds of solves per decision, which is a hard
+requirement, so the faster exact solver wins on cost alone. The gap also
+grows with $k$, not shrinks, which is the opposite of what motivated phase 1.
+
+**What would change this.** The dynamic program becomes the better choice if
+the state space can be cut. The obvious route is to track two runs per colour
+only for colours that can actually have two runs, which needs a hand-size
+bound rather than a fixed table. Worth revisiting if phase 2 turns out to be
+the bottleneck rather than the sampling.
+
+**Status.** Holds.
+
+## D8. No bound that ignores deferred run scoring may prune the dynamic program
+
+**Decision.** The dynamic program explores its state space fully. It orders
+options by promise but does not prune them.
+
+**Why.** An attempt was made to skip an option when its score plus the total
+worth of the remaining tiles could not beat the incumbent. The bound is not
+admissible. When a run reaches length 3 at value $v$, the program credits
+the whole run, $(v-2) + (v-1) + v$, and two of those tiles have values below
+$v$. So the value still obtainable from a state is not bounded by the worth
+of the tiles with higher numbers. The pruning silently returned 15 instead
+of 18 for a 3-4-5-6 run, and still agreed with the branch \& bound on 150
+random hands of 4 to 11 tiles, because random hands rarely contain runs that
+end exactly at length 3 or 4.
+
+**The general lesson, worth more than the bug.** A cross-check that passes
+on random data is not evidence of correctness. It is evidence that the
+hand-constructed cases are missing. The 3-4-5-6 hand was written by hand
+precisely because it is the shape the bound gets wrong.
+
+**Status.** Holds.
+
+## D9. The hand-constructed cases come first
+
+**Decision.** The test suite checks hands worked out by hand before it
+compares against an oracle, and compares against the oracle on a fixed seed
+so the sample is reproducible.
+
+**Why.** D8 showed that random agreement can hide a specific error. The
+hand-constructed cases are the specification: a 3-tile run, a 4-tile run, a
+5-tile run, groups of three and four, five copies of one tile, a run beside
+a group, two runs of one colour that overlap in value but not in tile, and
+hands with no meld at all.
+
+**Status.** Holds.
+
+# Phases
+
+| Phase | Content | Status |
+|---|---|---|
+| 1 | $V(H)$ as an exact dynamic program | done |
+| 1b | Jokers inside $V$ | next |
+| 2 | `draw_value()`: exact expected gain of one drawn tile | planned |
+| 3 | `exposure()`: what playing gives the opponent | planned |
+| 4 | `decide_play_or_draw()` and the sweep over $\lambda$ | planned |
+| 5 | `simulate_game()`: policy comparison | planned |
+| 6 | Write-up | planned |
+
+## Phase 1. The value function
+
+**What was built.** `best_meld_value(hand, copies, reward)` in
+`scripts/08_play_or_draw.R`: an exact dynamic program over tile values,
+capping run lengths at three and deciding groups exactly from the
+leftovers. The same program with a flat reward, `best_meld_coverage()`,
+maximises the number of melded tiles instead of their value, which is the
+objective of `scripts/07_runs_vs_groups.R` and so serves as a second,
+independent check.
+
+**How it was validated.** Against three things at once.
+
+- Eleven hands worked out by hand, covering every meld shape listed in D9.
+- `max_opening()`, the branch \& bound of `scripts/06_opening_analysis.R`,
+  on 360 random hands of 4, 6, 8, 10, 12 and 14 tiles: no disagreement.
+- `solve_opening_coverage()` on 40 random hands of 12 tiles, and on a
+  hand-constructed case: no disagreement.
+
+**What it cost, and what it taught.** Two to three orders of magnitude
+slower than the branch \& bound (D7), and the reason is a misreading of the
+paper's state-space bound (D6). The exactness is solid; the speed argument
+that motivated phase 1 did not survive contact with the measurements.
+
+**Bugs found on the way, kept here because each one is a trap for the next
+phase.**
+
+| Bug | Symptom | Cause |
+|---|---|---|
+| State read as a list | 6 instead of 0 on 1 red, 2 blue, 3 blue | run lengths read from the wrong slot |
+| Coverage reusing value scores | coverage tracked value, not tiles | reward not threaded through |
+| Leftover indexed by tiles *used* | wrong group score | `avail - used` is the leftover, not `used` |
+| Leftover interpolated over all colours | negative counts, `NA` answer | only active colours expand |
+| `reward_v` off by one | 24 instead of 28 on four 7s | `vapply(0:13, ...)` is indexed from 1 |
+| Greedy helper recursing on itself | stack overflow | should recurse on the remainder |
+
+The off-by-one is the nastiest: it made every answer a little small, and
+small errors look plausible.
+
+## Phase 1b. Jokers
+
+Extend the state with what a joker can stand for. The question that has to
+be settled first: a joker is a *choice* of tile made under the same
+constraints, so it needs its own dimension, and the dimension is 53, not 2.
+This is the phase most likely to change the shape of the solution, and it
+should be designed before phase 2 depends on $V$.
+
+## Phase 2. What a draw is worth
+
+`draw_value(H, pool)` is the expected gain from one tile:
+
+$$\mathbb{E}_{X \sim \text{pool}}\big[V(H + X)\big] - V(H)$$
+
+Note the form. It is the difference of two values of the *same* function,
+and because the pool is finite it can be computed by enumeration rather
+than sampling: for each tile type with weight $w$ in the pool, the gain is
+$V(H + X) - V(H)$. The only cost is one exact solve per distinct tile type.
+
+The decision to defer is whether the number of solves can be cut. $V(H + X)$
+differs from $V(H)$ only through tiles of the value of $X$, so most of the
+work is shared, but the dynamic program of D7 does not expose that
+structure, and the branch \& bound certainly does not.
+
+## Phase 3. What playing gives away
+
+`exposure(board, my_meld)` is what the opponent can do with what I leave:
+
+$$\mathbb{E}_{H_o}\big[V(H_o + M)\big] - V(H_o)$$
+
+for $H_o$ drawn from the unseen pool and $M$ the usable part of my meld.
+This is the same shape as phase 2 with the roles reversed, and it is the
+term that makes playing a real decision rather than a reflex.
+
+An open question for this phase: the opponent's hand is not observable, and
+the right distribution for it is not obviously uniform over the remaining
+pool. Choices have to be made and recorded.
+
+## Phase 4. The decision
+
+Play when the meld is worth more than the draw, allowing for what it
+exposes:
+
+$$\text{play if } V(H) - V(H_{\text{after}}) > \lambda \cdot \text{exposure}$$
+
+$\lambda$ is a tunable margin. A sweep over it is planned rather than a
+chosen value, because the right margin is an opponent-model question, not
+a fact about the rules, and the sweep turns that into something visible.
+
+Forced cases are handled before any of this: quarantine with no opening
+melds means draw, an empty pool means play, a hand with nothing meldeable
+means draw, and a hand that can only be melded at a loss is still a
+decision, not an exception.
+
+## Phase 5. Simulation
+
+Compare policies over full games, against the heuristics already in the
+repository, so that the decision rule is judged on games played rather than
+on the reasoning that produced it.
+
+# Open questions
+
+1. Can the dynamic program's state space be cut enough to beat the branch
+   \& bound? This decides whether D7 stands. A hand-size bound on the
+   number of runs per colour is the obvious place to look (D7).
+2. What is the right distribution for the opponent's hand in phase 3?
+   Uniform over the remaining pool is the simplest defensible choice, but
+   it ignores everything the opponent has already played, which is
+   information we do have.
+3. Should $V$ also be evaluated for *reachable* future hands, rather than
+   only the current one? Playing now changes the hand, so the value of a
+   play is a value of a sequence. Phase 4 takes the first step only.
+4. Is $\lambda$ better as a constant, or as a function of how much the
+   opponent has already laid down? Late in a game the exposure of a big meld
+   matters more than at the start.
+
+# What is not claimed
+
+- The dynamic program is exact for hands of real tiles with at most
+  `copies` of any tile. It raises an error otherwise, and it raises an error
+  on jokers until phase 1b.
+- The agreement with the branch \& bound is strong evidence on the sampled
+  distribution, not a proof. The proof rests on the argument in D4, D5 and
+  D6, and the hand-constructed cases in D9 are what hold the argument to
+  the code.
+- Nothing here measures how good the resulting policy is. That is phase 5.
+
+# References
+
+The inner solver follows van Rijn, Takes and Vis (2016) [@vanrijn2016].
+The branch \& bound it is verified against, and the coverage solver, are
+described in `reports/divulgation_branch_and_bound.qmd`.
