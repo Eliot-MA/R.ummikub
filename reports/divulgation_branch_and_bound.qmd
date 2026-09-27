@@ -42,7 +42,9 @@ share tiles, so "try all combinations" is not obviously fast.
 Deciding *does an opening exist?* is an optimization problem: find the
 maximum total score achievable with a valid set of melds, and compare it to
 30. The algorithm that solves it exactly — in milliseconds — is the topic of
-this text: **branch & bound**.
+this text: **branch & bound**. (It is not the *only* way to solve it exactly,
+and we will meet a much shorter polynomial-time method in the next section.
+Its exact answer is not what this text is for; its *reasoning* is.)
 :::
 
 # The mathematical problem under the hood
@@ -69,21 +71,65 @@ meld, a constraint *sum ≤ 1* for every tile (each tile can belong to at most
 one chosen meld), and an objective of maximizing the weighted sum
 [@barnhart1998]. Set packing is one of the original NP-complete problems
 identified by Karp in 1972 [@karp1972], and its many relatives are catalogued
-in the standard reference on intractability [@garey1979]. So in the worst
-case any exact algorithm can take exponential time — and even *approximating*
-it is hard: it cannot be approximated within a factor of Ω(k/log k) unless
-P = NP [@hazan2006], where k is the largest size of a set.
+in the standard reference on intractability [@garey1979]. Even *approximating*
+it is hard in general: it cannot be approximated within a factor of Ω(k/log k)
+unless P = NP [@hazan2006], where k is the largest size of a set.
 :::
 
-Why does this matter to you as a player? Because it tells you *why* there is
-no obvious shortcut. The hardness is not just theoretical: the most natural
-greedy idea — always take the most valuable meld that still fits — has a
-worst-case guarantee that grows with k, the size of the largest meld
-[@chandra2001]. Rummikub melds are small (a group has at most 4 tiles, a run
-at most 13), yet the hand h1 below will show that even at this scale the
-greedy can be wrong. And the warning stands: an exact algorithm must be
-exponential in the worst case, so the practical trick is to make the
-*typical* case fast.
+Read that carefully and you will notice it is a statement about **set packing
+in general** — sets of any size, any weight, any universe. It is an *upper
+bound* on the difficulty of our problem, not a verdict about it. And Rummikub
+turns out to be a remarkably narrow slice of that universe, with a much
+friendlier answer.
+
+::: {.callout-note}
+**But Rummikub itself is easy — it is in P**
+van Rijn, Takes and Vis give an algorithm that solves the *Rummikub puzzle* —
+"given a hand, form disjoint valid runs and groups whose total score is
+maximized" — in polynomial time [@vanrijn2016]. The device is a **notebook far
+too small to forget**: sweep the tile values 1, 2, …, n in order, and for each
+colour keep a single counter saying *how long is the same-colour run currently
+in progress, capped at 3*.
+
+Why is the cap legitimate? Because the moment a run reaches length 3 it is
+already a legal meld, and every further tile of it simply **adds its own
+value**: 3+4+5 scores 12, and extending that meld with the 6 and the 7 adds
+13 more. Lengths 4, 5, 6… never require a separate decision — only "0, 1, 2 or
+≥ 3" does. So the whole past of the computation collapses into that tiny
+state, and the algorithm moves forward once, **never backtracking**.
+
+For one colour with `m = 2` copies there are only `C(m+3, 3) = 10` distinct run
+configurations, which bounds the entire state space at `n × k × f(m)` — a few
+hundred entries for the real game [@vanrijn2016]. Since `k = 4` colours and
+`m = 2` copies are *fixed* in standard Rummikub, the only parameter that grows
+is `n`, and the algorithm is therefore **linear in the number of tile values**.
+The two jokers cost one extra dimension with three states (0, 1 or 2 jokers
+used), i.e. a constant factor.
+:::
+
+Why does this matter to you as a player? Because it settles what the right
+question is. Had the Rummikub puzzle genuinely been NP-hard, every strategic
+question built on top of it would be expensive, and the honest engineering
+answer would be to approximate. It is not. The inner question — *how good is
+this hand?* — can be answered **exactly, cheaply and deterministically**. What
+is expensive is asking it *very many times*, which is exactly what the
+strategy questions of objective 6 do.
+
+So why is this repository built on branch & bound rather than on the dynamic
+program of [@vanrijn2016]? Because of the purpose of this text. **The dynamic
+program is shorter and faster, but it is not transparent: it produces the right
+number without ever showing the structure behind it.** The decision tree *is*
+the structure of the answer. Each node is a question a player might genuinely
+ask at the table — *do I play this tile here, or here, or not at all?* — and the
+bound that prunes a subtree is a sentence of plain meaning. That transparency is
+the entire reason this document exists.
+
+The familiar hard-case warning still carries its weight, though, because it is
+about a different failure: the most natural greedy idea — always take the most
+valuable meld that still fits — has a worst-case guarantee that grows with k,
+the size of the largest meld [@chandra2001]. Rummikub melds are small (a group
+has at most 4 tiles, a run at most 13), yet the hand h1 below will show that
+even at this scale greedy can be wrong. Being in P does not make guessing wise.
 
 # The idea: search, but search smartly
 

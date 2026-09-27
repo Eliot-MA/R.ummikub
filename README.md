@@ -48,9 +48,16 @@ strategies of the game.
    - **Runs vs groups:** in random hands, which type of meld appears in the
       optimal play (disjoint melds covering the most tiles), and which tile
       numbers generate more melds.
-   - **Value of drawing:** in which situations drawing is better than waiting
-     for a restructuring play, and which tile types unlock the most plays
-     (simulations).
+   - **Play or draw:** a decision rule that, given a hand, the board and the
+     state of the pool, returns *play* or *draw*. The inner value function
+     (the best meldable value of a hand) is solved exactly in polynomial
+     time with the dynamic program of van Rijn et al. (2016) rather than
+     with the branch & bound, so the expected gain of one more tile can be
+     evaluated **exactly** over the pool. The rule weighs that gain against
+     the cost of depleting a pool shared with the opponent, and reports the
+     *margin* — so the outcome is a threshold curve, not a yes/no. Special
+     cases: play if the pool is empty, play if the hand can be emptied (win),
+     draw if the turn is blocked by the rule of 30.
 
 > Bots / automatic players are out of scope for now (future work).
 
@@ -106,12 +113,14 @@ them use the same tile representation.
       in the optimal play of random hands (coverage branch & bound over
       disjoint melds); heatmap of played melds by tile number. Implemented
       and tested (31 tests).
-- [ ] **Objective 6, Value of drawing**: when drawing beats waiting for a
-      restructuring play; which tile types unlock the most plays.
+- [ ] **Objective 6, Play or draw**: a *play vs draw* decision rule for a
+  given hand / board / pool, built on the exact expected gain of a drawn
+  tile (polynomial-time best-meld solver as the value function); which tile
+  types unlock the most plays; the point threshold at which the answer flips.
 
 Tools (objectives 1-5) are implemented and tested (**133 tests passing**),
 and the two analyses of objective 6 add 53 more (**186 tests passing in
-total**). The remaining game-analysis phase (value of drawing) is planned.
+total**). The remaining game-analysis phase (play or draw) is planned.
 
 ## Open questions / to decide
 
