@@ -4,5 +4,8 @@
 .Ruserdata
 Untitled.R
 
+# Third-party papers (e.g. van_Rijn2016.pdf): fetched from arXiv, not ours to host
+*.pdf
+
 # Generated simulation outputs (reproducible with scripts/06_opening_analysis.R)
 results/
